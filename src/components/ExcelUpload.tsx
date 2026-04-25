@@ -1,0 +1,488 @@
+'use client';
+
+import { useState, useCallback, useMemo } from 'react';
+import { Upload, FileSpreadsheet, Check, AlertCircle, Trash2, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Hospital, Territory, HistoricalAssignment, LockAssignment } from '@/types';
+import { parseHospitals, parseTerritories, parseHistoricalAssignments, parseLockAssignments, validateHospitals, validateTerritories, validateCrossTable, ValidationResult } from '@/lib/excel-parser';
+
+interface ExcelUploadProps {
+  onDataLoaded: (hospitals: Hospital[], territories: Territory[], historicalAssignments?: HistoricalAssignment[], lockAssignments?: LockAssignment[]) => void;
+  initialHospitals?: Hospital[];
+  initialTerritories?: Territory[];
+  initialHistorical?: HistoricalAssignment[];
+  initialLockAssignments?: LockAssignment[];
+}
+
+export default function ExcelUpload({ onDataLoaded, initialHospitals, initialTerritories, initialHistorical, initialLockAssignments }: ExcelUploadProps) {
+  const [hospitals, setHospitals] = useState<Hospital[]>(initialHospitals || []);
+  const [territories, setTerritories] = useState<Territory[]>(initialTerritories || []);
+  const [historicalAssignments, setHistoricalAssignments] = useState<HistoricalAssignment[]>(initialHistorical || []);
+  const [lockAssignments, setLockAssignments] = useState<LockAssignment[]>(initialLockAssignments || []);
+  const [hospitalFile, setHospitalFile] = useState<string>(initialHospitals?.length ? `已加载 ${initialHospitals.length} 家医院` : '');
+  const [territoryFile, setTerritoryFile] = useState<string>(initialTerritories?.length ? `已加载 ${initialTerritories.length} 个辖区` : '');
+  const [historicalFile, setHistoricalFile] = useState<string>(initialHistorical?.length ? `已加载 ${initialHistorical.length} 条记录` : '');
+  const [lockFile, setLockFile] = useState<string>(initialLockAssignments?.length ? `已加载 ${initialLockAssignments.length} 条锁定` : '');
+  const [hospitalError, setHospitalError] = useState<string>('');
+  const [territoryError, setTerritoryError] = useState<string>('');
+  const [historicalError, setHistoricalError] = useState<string>('');
+  const [lockError, setLockError] = useState<string>('');
+  const [hospitalColumns, setHospitalColumns] = useState<string[]>([]);
+  const [territoryColumns, setTerritoryColumns] = useState<string[]>([]);
+  const [historicalColumns, setHistoricalColumns] = useState<string[]>([]);
+  const [lockColumns, setLockColumns] = useState<string[]>([]);
+
+  const handleHospitalUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setHospitalError('');
+      try {
+        const buffer = await file.arrayBuffer();
+        const { hospitals: parsed, columns } = parseHospitals(buffer);
+        setHospitals(parsed);
+        setHospitalFile(file.name);
+        setHospitalColumns(columns);
+      } catch (err) {
+        setHospitalError(err instanceof Error ? err.message : '解析失败');
+      }
+    },
+    []
+  );
+
+  const handleTerritoryUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setTerritoryError('');
+      try {
+        const buffer = await file.arrayBuffer();
+        const { territories: parsed, columns } = parseTerritories(buffer);
+        setTerritories(parsed);
+        setTerritoryFile(file.name);
+        setTerritoryColumns(columns);
+      } catch (err) {
+        setTerritoryError(err instanceof Error ? err.message : '解析失败');
+      }
+    },
+    []
+  );
+
+  const handleHistoricalUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setHistoricalError('');
+      try {
+        const buffer = await file.arrayBuffer();
+        const { assignments: parsed, columns } = parseHistoricalAssignments(buffer);
+        setHistoricalAssignments(parsed);
+        setHistoricalFile(file.name);
+        setHistoricalColumns(columns);
+      } catch (err) {
+        setHistoricalError(err instanceof Error ? err.message : '解析失败');
+      }
+    },
+    []
+  );
+
+  const handleLockUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setLockError('');
+      try {
+        const buffer = await file.arrayBuffer();
+        const { lockAssignments: parsed, columns } = parseLockAssignments(buffer);
+        setLockAssignments(parsed);
+        setLockFile(file.name);
+        setLockColumns(columns);
+      } catch (err) {
+        setLockError(err instanceof Error ? err.message : '解析失败');
+      }
+    },
+    []
+  );
+
+  const [loadingTest, setLoadingTest] = useState(false);
+
+  const handleLoadTestData = useCallback(async () => {
+    setLoadingTest(true);
+    try {
+      const [hRes, tRes, histRes, lockRes] = await Promise.all([
+        fetch('/test-hospitals.xlsx'),
+        fetch('/test-territories.xlsx'),
+        fetch('/test-historical.xlsx'),
+        fetch('/test-lock-assignments.xlsx'),
+      ]);
+
+      const hBuf = await hRes.arrayBuffer();
+      const tBuf = await tRes.arrayBuffer();
+      const histBuf = await histRes.arrayBuffer();
+      const lockBuf = await lockRes.arrayBuffer();
+
+      const { hospitals: h, columns: hCols } = parseHospitals(hBuf);
+      const { territories: t, columns: tCols } = parseTerritories(tBuf);
+      const { assignments: hist, columns: histCols } = parseHistoricalAssignments(histBuf);
+      const { lockAssignments: lock, columns: lockCols } = parseLockAssignments(lockBuf);
+
+      setHospitals(h);
+      setHospitalFile(`测试数据 ${h.length} 家医院`);
+      setHospitalColumns(hCols);
+
+      setTerritories(t);
+      setTerritoryFile(`测试数据 ${t.length} 个辖区`);
+      setTerritoryColumns(tCols);
+
+      setHistoricalAssignments(hist);
+      setHistoricalFile(`测试数据 ${hist.length} 条记录`);
+      setHistoricalColumns(histCols);
+
+      setLockAssignments(lock);
+      setLockFile(`测试数据 ${lock.length} 条锁定`);
+      setLockColumns(lockCols);
+    } catch (err) {
+      console.error('加载测试数据失败:', err);
+    } finally {
+      setLoadingTest(false);
+    }
+  }, []);
+
+  // 数据校验
+  const validation: ValidationResult = useMemo(() => {
+    if (hospitals.length === 0 && territories.length === 0) {
+      return { errors: [], warnings: [] };
+    }
+
+    const allErrors: string[] = [];
+    const allWarnings: string[] = [];
+
+    if (hospitals.length > 0) {
+      const hv = validateHospitals(hospitals);
+      allErrors.push(...hv.errors);
+      allWarnings.push(...hv.warnings);
+    }
+
+    if (territories.length > 0) {
+      const tv = validateTerritories(territories);
+      allErrors.push(...tv.errors);
+      allWarnings.push(...tv.warnings);
+    }
+
+    if (hospitals.length > 0 && territories.length > 0) {
+      const cv = validateCrossTable(
+        hospitals,
+        territories,
+        historicalAssignments.length > 0 ? historicalAssignments : undefined,
+        lockAssignments.length > 0 ? lockAssignments : undefined
+      );
+      allErrors.push(...cv.errors);
+      allWarnings.push(...cv.warnings);
+    }
+
+    return { errors: allErrors, warnings: allWarnings };
+  }, [hospitals, territories, historicalAssignments, lockAssignments]);
+
+  const hasData = hospitals.length > 0 && territories.length > 0;
+  const canProceed = hasData && validation.errors.length === 0;
+
+  return (
+    <div className="max-w-5xl mx-auto">
+      <div className="text-center mb-8">
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">数据上传</h2>
+        <p className="text-gray-600 mb-3">上传医院清单、辖区清单及可选的历史分配和锁定清单</p>
+        <div className="flex items-center justify-center gap-4 text-sm flex-wrap">
+          <span className="text-gray-600">没有数据？下载示例文件：</span>
+          <a href="/sample-hospitals.xlsx" download className="text-blue-500 hover:text-blue-700 underline">医院清单示例</a>
+          <a href="/sample-territories.xlsx" download className="text-blue-500 hover:text-blue-700 underline">辖区清单示例</a>
+          <a href="/sample-historical.xlsx" download className="text-blue-500 hover:text-blue-700 underline">历史分配示例</a>
+          <a href="/sample-lock-assignments.xlsx" download className="text-blue-500 hover:text-blue-700 underline">锁定清单示例</a>
+        </div>
+        <button
+          onClick={handleLoadTestData}
+          disabled={loadingTest}
+          className="mt-2 px-4 py-1.5 text-sm bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-50"
+        >
+          {loadingTest ? '加载中...' : '一键加载测试数据'}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        {/* Hospital Upload */}
+        <div className="border-2 border-dashed border-gray-200 rounded-xl p-6 hover:border-blue-400 transition-colors">
+          <div className="text-center">
+            <FileSpreadsheet className="mx-auto h-12 w-12 text-green-500 mb-4" />
+            <h3 className="text-lg font-semibold text-gray-800 mb-1">医院清单</h3>
+            <p className="text-xs text-gray-500 mb-3">必填 · 含产品组列</p>
+
+            {!hospitalFile ? (
+              <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors">
+                <Upload className="h-4 w-4" />
+                选择文件
+                <input type="file" accept=".xlsx,.xls" onChange={handleHospitalUpload} className="hidden" />
+              </label>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center justify-center gap-2 text-green-600">
+                  <Check className="h-5 w-5" />
+                  <span className="font-medium text-sm">{hospitalFile}</span>
+                  <button onClick={() => { setHospitals([]); setHospitalFile(''); setHospitalColumns([]); }} className="ml-2 text-gray-400 hover:text-red-500">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="text-sm text-gray-600">
+                  已解析 <span className="font-bold text-blue-600">{hospitals.length}</span> 家医院
+                </div>
+                <div className="text-xs text-gray-500">识别列: {hospitalColumns.join(', ')}</div>
+              </div>
+            )}
+            {hospitalError && (
+              <div className="mt-3 flex items-center gap-2 text-red-500 text-sm"><AlertCircle className="h-4 w-4" />{hospitalError}</div>
+            )}
+          </div>
+        </div>
+
+        {/* Territory Upload */}
+        <div className="border-2 border-dashed border-gray-200 rounded-xl p-6 hover:border-blue-400 transition-colors">
+          <div className="text-center">
+            <FileSpreadsheet className="mx-auto h-12 w-12 text-purple-500 mb-4" />
+            <h3 className="text-lg font-semibold text-gray-800 mb-1">辖区清单</h3>
+            <p className="text-xs text-gray-500 mb-3">必填 · 含大区/LEL/产品组列</p>
+
+            {!territoryFile ? (
+              <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors">
+                <Upload className="h-4 w-4" />
+                选择文件
+                <input type="file" accept=".xlsx,.xls" onChange={handleTerritoryUpload} className="hidden" />
+              </label>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center justify-center gap-2 text-green-600">
+                  <Check className="h-5 w-5" />
+                  <span className="font-medium text-sm">{territoryFile}</span>
+                  <button onClick={() => { setTerritories([]); setTerritoryFile(''); setTerritoryColumns([]); }} className="ml-2 text-gray-400 hover:text-red-500">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="text-sm text-gray-600">
+                  已解析 <span className="font-bold text-purple-600">{territories.length}</span> 个辖区
+                </div>
+                <div className="text-xs text-gray-500">识别列: {territoryColumns.join(', ')}</div>
+              </div>
+            )}
+            {territoryError && (
+              <div className="mt-3 flex items-center gap-2 text-red-500 text-sm"><AlertCircle className="h-4 w-4" />{territoryError}</div>
+            )}
+          </div>
+        </div>
+
+        {/* Historical Assignment Upload (Optional) */}
+        <div className="border-2 border-dashed border-gray-200 rounded-xl p-6 hover:border-blue-400 transition-colors">
+          <div className="text-center">
+            <FileSpreadsheet className="mx-auto h-12 w-12 text-amber-500 mb-4" />
+            <h3 className="text-lg font-semibold text-gray-800 mb-1">历史分配</h3>
+            <p className="text-xs text-gray-500 mb-3">可选 · 上季度分配结果</p>
+
+            {!historicalFile ? (
+              <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors">
+                <Upload className="h-4 w-4" />
+                选择文件
+                <input type="file" accept=".xlsx,.xls" onChange={handleHistoricalUpload} className="hidden" />
+              </label>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center justify-center gap-2 text-green-600">
+                  <Check className="h-5 w-5" />
+                  <span className="font-medium text-sm">{historicalFile}</span>
+                  <button onClick={() => { setHistoricalAssignments([]); setHistoricalFile(''); setHistoricalColumns([]); }} className="ml-2 text-gray-400 hover:text-red-500">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="text-sm text-gray-600">
+                  已解析 <span className="font-bold text-amber-600">{historicalAssignments.length}</span> 条历史分配
+                </div>
+                <div className="text-xs text-gray-500">识别列: {historicalColumns.join(', ')}</div>
+              </div>
+            )}
+            {historicalError && (
+              <div className="mt-3 flex items-center gap-2 text-red-500 text-sm"><AlertCircle className="h-4 w-4" />{historicalError}</div>
+            )}
+          </div>
+        </div>
+
+        {/* Lock Assignment Upload (Optional) */}
+        <div className="border-2 border-dashed border-gray-200 rounded-xl p-6 hover:border-red-400 transition-colors">
+          <div className="text-center">
+            <FileSpreadsheet className="mx-auto h-12 w-12 text-red-500 mb-4" />
+            <h3 className="text-lg font-semibold text-gray-800 mb-1">锁定清单</h3>
+            <p className="text-xs text-gray-500 mb-3">可选 · 医院锁定到指定LEL</p>
+
+            {!lockFile ? (
+              <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors">
+                <Upload className="h-4 w-4" />
+                选择文件
+                <input type="file" accept=".xlsx,.xls" onChange={handleLockUpload} className="hidden" />
+              </label>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center justify-center gap-2 text-green-600">
+                  <Check className="h-5 w-5" />
+                  <span className="font-medium text-sm">{lockFile}</span>
+                  <button onClick={() => { setLockAssignments([]); setLockFile(''); setLockColumns([]); }} className="ml-2 text-gray-400 hover:text-red-500">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="text-sm text-gray-600">
+                  已解析 <span className="font-bold text-red-600">{lockAssignments.length}</span> 条锁定分配
+                </div>
+                <div className="text-xs text-gray-500">识别列: {lockColumns.join(', ')}</div>
+              </div>
+            )}
+            {lockError && (
+              <div className="mt-3 flex items-center gap-2 text-red-500 text-sm"><AlertCircle className="h-4 w-4" />{lockError}</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Data Preview */}
+      {hospitals.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">医院数据预览（前5条）</h3>
+          <div className="overflow-x-auto rounded-lg border border-gray-200">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-gray-600">inscode</th>
+                  <th className="px-3 py-2 text-left text-gray-600">insname</th>
+                  <th className="px-3 py-2 text-left text-gray-600">产品组</th>
+                  <th className="px-3 py-2 text-left text-gray-600">城市</th>
+                  <th className="px-3 py-2 text-left text-gray-600">省份</th>
+                  <th className="px-3 py-2 text-right text-gray-600">销量</th>
+                  <th className="px-3 py-2 text-right text-gray-600">潜力</th>
+                  <th className="px-3 py-2 text-right text-gray-600">index</th>
+                </tr>
+              </thead>
+              <tbody>
+                {hospitals.slice(0, 5).map((h) => (
+                  <tr key={h.id} className="border-t border-gray-100">
+                    <td className="px-3 py-2 text-gray-800 font-mono text-xs font-medium">{h.inscode}</td>
+                    <td className="px-3 py-2 text-gray-800 font-medium">{h.insname}</td>
+                    <td className="px-3 py-2 text-gray-600">{h.productGroup || '-'}</td>
+                    <td className="px-3 py-2 text-gray-600">{h.city}</td>
+                    <td className="px-3 py-2 text-gray-600">{h.province}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{h.sales ? h.sales.toLocaleString() : '-'}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{h.potential ? h.potential.toLocaleString() : '-'}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-blue-700">{h.index ? h.index.toFixed(2) : '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {territories.length > 0 && (
+        <div className="mb-8">
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">辖区数据预览（前10条）</h3>
+          <div className="overflow-x-auto rounded-lg border border-gray-200">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-gray-600">TRTY_CODE</th>
+                  <th className="px-3 py-2 text-left text-gray-600">Rep</th>
+                  <th className="px-3 py-2 text-left text-gray-600">省份</th>
+                  <th className="px-3 py-2 text-left text-gray-600">大区</th>
+                  <th className="px-3 py-2 text-left text-gray-600">LEL</th>
+                  <th className="px-3 py-2 text-left text-gray-600">产品组</th>
+                </tr>
+              </thead>
+              <tbody>
+                {territories.slice(0, 10).map((t) => (
+                  <tr key={t.id} className="border-t border-gray-100">
+                    <td className="px-3 py-2 text-gray-800 font-medium">{t.trtyCode}</td>
+                    <td className="px-3 py-2 text-gray-600">{t.rep || '-'}</td>
+                    <td className="px-3 py-2 text-gray-600">{t.province || '-'}</td>
+                    <td className="px-3 py-2 text-gray-600">{t.region || '-'}</td>
+                    <td className="px-3 py-2 text-gray-600">{t.lel || '-'}</td>
+                    <td className="px-3 py-2 text-gray-600">{t.productGroup || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Validation Results */}
+      {hasData && (validation.errors.length > 0 || validation.warnings.length > 0) && (
+        <div className="mb-6 space-y-3">
+          {validation.errors.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertCircle className="h-5 w-5 text-red-500" />
+                <span className="font-semibold text-red-700 text-sm">数据错误（需修复后才能继续）</span>
+              </div>
+              <ul className="space-y-1">
+                {validation.errors.map((err, i) => (
+                  <li key={i} className="text-sm text-red-600 flex items-start gap-2">
+                    <span className="mt-0.5 shrink-0">•</span>
+                    <span>{err}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {validation.warnings.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className="h-5 w-5 text-amber-500" />
+                <span className="font-semibold text-amber-700 text-sm">数据警告（不影响继续，但可能影响结果）</span>
+              </div>
+              <ul className="space-y-1">
+                {validation.warnings.map((warn, i) => (
+                  <li key={i} className="text-sm text-amber-600 flex items-start gap-2">
+                    <span className="mt-0.5 shrink-0">•</span>
+                    <span>{warn}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {hasData && validation.errors.length === 0 && validation.warnings.length === 0 && (
+        <div className="mb-6">
+          <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5 text-green-500" />
+            <span className="text-sm text-green-700 font-medium">数据校验通过</span>
+          </div>
+        </div>
+      )}
+
+      {/* Proceed Button */}
+      <div className="text-center">
+        <button
+          onClick={() => onDataLoaded(
+            hospitals,
+            territories,
+            historicalAssignments.length > 0 ? historicalAssignments : undefined,
+            lockAssignments.length > 0 ? lockAssignments : undefined
+          )}
+          disabled={!canProceed}
+          className={`px-8 py-3 rounded-xl font-semibold text-white transition-all ${
+            canProceed
+              ? 'bg-blue-600 hover:bg-blue-700 shadow-lg hover:shadow-xl'
+              : 'bg-gray-300 cursor-not-allowed'
+          }`}
+        >
+          下一步：设置约束条件
+        </button>
+      </div>
+    </div>
+  );
+}
