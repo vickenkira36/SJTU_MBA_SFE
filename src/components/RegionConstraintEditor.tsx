@@ -21,6 +21,7 @@ function generateDefaults(hospitals: Hospital[], territories: Territory[], const
   const distanceC = constraints.find((c) => c.type === 'geographic_distance');
   const splitC = constraints.find((c) => c.type === 'split_count' || c.type === 'hospital_split');
   const historicalC = constraints.find((c) => c.type === 'historical_stability');
+  const districtC = constraints.find((c) => c.type === 'district_concentration');
 
   const globalIndexMin = indexRangeC ? Number(indexRangeC.value) || 800 : 800;
   const globalIndexMax = indexRangeC?.value2 != null ? Number(indexRangeC.value2) : 1200;
@@ -33,6 +34,7 @@ function generateDefaults(hospitals: Hospital[], territories: Territory[], const
   const globalCityThreshold = cityLimitC?.threshold ?? 1;
   const globalDistanceThreshold = distanceC?.threshold ?? 10;
   const globalHistoricalThreshold = historicalC?.threshold ?? 200;
+  const globalDistrictThreshold = districtC?.threshold ?? 1;
 
   const groups = new Map<string, { hospitals: Hospital[]; territories: Territory[] }>();
 
@@ -76,6 +78,7 @@ function generateDefaults(hospitals: Hospital[], territories: Territory[], const
       cityThreshold: globalCityThreshold,
       distanceThreshold: globalDistanceThreshold,
       historicalThreshold: globalHistoricalThreshold,
+      districtThreshold: globalDistrictThreshold,
     });
   }
 
@@ -89,6 +92,7 @@ function getGlobalRow(constraints: Constraint[]) {
   const distanceC = constraints.find((c) => c.type === 'geographic_distance');
   const splitC = constraints.find((c) => c.type === 'split_count' || c.type === 'hospital_split');
   const historicalC = constraints.find((c) => c.type === 'historical_stability');
+  const districtC = constraints.find((c) => c.type === 'district_concentration');
 
   return {
     indexMin: indexRangeC ? Number(indexRangeC.value) || 800 : 800,
@@ -102,11 +106,13 @@ function getGlobalRow(constraints: Constraint[]) {
     cityThreshold: cityLimitC?.threshold ?? 1,
     distanceThreshold: distanceC?.threshold ?? 10,
     historicalThreshold: historicalC?.threshold ?? 200,
+    districtThreshold: districtC?.threshold ?? 1,
     indexRangeId: indexRangeC?.id,
     capacityId: capacityC?.id,
     cityLimitId: cityLimitC?.id,
     distanceId: distanceC?.id,
     historicalId: historicalC?.id,
+    districtId: districtC?.id,
   };
 }
 
@@ -124,8 +130,9 @@ export default function RegionConstraintEditor({
   const showDistance = constraintTypes.has('geographic_distance');
   const showSplitCount = constraintTypes.has('split_count') || constraintTypes.has('hospital_split');
   const showHistorical = constraintTypes.has('historical_stability');
+  const showDistrict = constraintTypes.has('district_concentration');
 
-  const hasAnyColumn = showIndexRange || showCapacity || showCityLimit || showDistance || showSplitCount || showHistorical;
+  const hasAnyColumn = showIndexRange || showCapacity || showCityLimit || showDistance || showSplitCount || showHistorical || showDistrict;
 
   useEffect(() => {
     onChange(params);
@@ -206,13 +213,16 @@ export default function RegionConstraintEditor({
                 <th className="px-2 py-1 text-center text-gray-600 font-medium border-b border-gray-200" colSpan={2}>城市上限</th>
               )}
               {showDistance && (
-                <th className="px-2 py-1 text-center text-gray-600 font-medium border-b border-gray-200" colSpan={2}>辖区距离</th>
+                <th className="px-2 py-1 text-center text-gray-600 font-medium border-b border-gray-200" rowSpan={2}>辖区距离(km)</th>
               )}
               {showSplitCount && (
                 <th className="px-2 py-1 text-center text-gray-600 font-medium border-b border-gray-200" rowSpan={2}>AB岗拆分条件</th>
               )}
               {showHistorical && (
                 <th className="px-2 py-1 text-center text-gray-600 font-medium border-b border-gray-200" rowSpan={2}>历史阈值</th>
+              )}
+              {showDistrict && (
+                <th className="px-2 py-1 text-center text-gray-600 font-medium border-b border-gray-200" rowSpan={2}>区县阈值</th>
               )}
             </tr>
             <tr>
@@ -235,12 +245,7 @@ export default function RegionConstraintEditor({
                   <th className="px-1 py-1 text-center text-blue-500 font-normal text-xs">阈值</th>
                 </>
               )}
-              {showDistance && (
-                <>
-                  <th className="px-1 py-1 text-center text-gray-400 font-normal text-xs">km</th>
-                  <th className="px-1 py-1 text-center text-blue-500 font-normal text-xs">阈值</th>
-                </>
-              )}
+              {/* distance: single column, no sub-headers needed */}
             </tr>
           </thead>
           <tbody>
@@ -267,15 +272,13 @@ export default function RegionConstraintEditor({
                   {numCell(global.cityThreshold, (v) => global.cityLimitId && onThresholdChange(global.cityLimitId, v), 1, 1)}
                 </>
               )}
-              {showDistance && (
-                <>
-                  {readonlyCell(global.maxDistanceKm)}
-                  {numCell(global.distanceThreshold, (v) => global.distanceId && onThresholdChange(global.distanceId, v), 1, 5)}
-                </>
-              )}
+              {showDistance && readonlyCell(global.maxDistanceKm)}
               {showSplitCount && readonlyCell(global.splitThreshold)}
               {showHistorical && (
                 numCell(global.historicalThreshold, (v) => global.historicalId && onThresholdChange(global.historicalId, v), 50, 50)
+              )}
+              {showDistrict && (
+                numCell(global.districtThreshold, (v) => global.districtId && onThresholdChange(global.districtId, v), 1, 1)
               )}
             </tr>
 
@@ -306,16 +309,16 @@ export default function RegionConstraintEditor({
                   </>
                 )}
                 {showDistance && (
-                  <>
-                    {numCell(p.maxDistanceKm, (v) => updateParam(i, 'maxDistanceKm', v), 10, 50)}
-                    {numCell(p.distanceThreshold, (v) => updateParam(i, 'distanceThreshold', v), 1, 5)}
-                  </>
+                  numCell(p.maxDistanceKm, (v) => updateParam(i, 'maxDistanceKm', v), 10, 50)
                 )}
                 {showSplitCount && (
                   numCell(p.splitThreshold, (v) => updateParam(i, 'splitThreshold', v), 500, 100, 'w-20')
                 )}
                 {showHistorical && (
                   numCell(p.historicalThreshold, (v) => updateParam(i, 'historicalThreshold', v), 50, 50)
+                )}
+                {showDistrict && (
+                  numCell(p.districtThreshold, (v) => updateParam(i, 'districtThreshold', v), 1, 1)
                 )}
               </tr>
             ))}

@@ -17,6 +17,9 @@ const COLORS = [
   '#65A30D',
 ];
 
+// Drill-down levels
+type DrillLevel = 'country' | 'province' | 'lel' | 'rep';
+
 interface TerritoryMapProps {
   result: OptimizationResult;
   hospitals: Hospital[];
@@ -34,7 +37,10 @@ export default function TerritoryMap({ result, hospitals, territories }: Territo
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMap = useRef<L.Map | null>(null);
   const markersRef = useRef<L.LayerGroup | null>(null);
+
+  const [drillLevel, setDrillLevel] = useState<DrillLevel>('country');
   const [selectedProvince, setSelectedProvince] = useState<string | null>(null);
+  const [selectedLel, setSelectedLel] = useState<string | null>(null);
   const [selectedTerritory, setSelectedTerritory] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -57,7 +63,6 @@ export default function TerritoryMap({ result, hospitals, territories }: Territo
           colorIndex: tIdx,
         });
       }
-      // Always store compound key for split hospitals
       map.set(`${a.hospitalId}-${a.territoryId}`, {
         territoryId: a.territoryId,
         territoryName: a.territoryName,
@@ -101,7 +106,7 @@ export default function TerritoryMap({ result, hospitals, territories }: Territo
     return provinces.sort((a, b) => b.hospitalCount - a.hospitalCount);
   }, [validHospitals, territories]);
 
-  // Full bounds for "all" view
+  // Full bounds
   const fullBounds = useMemo(() => {
     if (validHospitals.length === 0) return null;
     return L.latLngBounds(
@@ -109,11 +114,34 @@ export default function TerritoryMap({ result, hospitals, territories }: Territo
     );
   }, [validHospitals]);
 
-  // Territory legend filtered by selected province
-  const legendData = useMemo(() => {
-    const filtered = selectedProvince
-      ? result.territoryResults.filter((tr) => tr.territory.province === selectedProvince)
-      : result.territoryResults;
+  // LEL data for selected province
+  const lelData = useMemo(() => {
+    if (!selectedProvince) return [];
+    const provTerritories = territories.filter((t) => t.province === selectedProvince);
+    const lelMap = new Map<string, { lel: string; territories: Territory[]; hospitalCount: number }>();
+
+    for (const t of provTerritories) {
+      const lel = t.lel || '未分配';
+      if (!lelMap.has(lel)) lelMap.set(lel, { lel, territories: [], hospitalCount: 0 });
+      lelMap.get(lel)!.territories.push(t);
+    }
+
+    // Count hospitals per LEL
+    for (const [, info] of lelMap) {
+      const tIds = new Set(info.territories.map((t) => t.id));
+      info.hospitalCount = result.assignments.filter((a) => tIds.has(a.territoryId)).length;
+    }
+
+    return Array.from(lelMap.values()).sort((a, b) => b.hospitalCount - a.hospitalCount);
+  }, [selectedProvince, territories, result]);
+
+  // Rep (territory) data for selected LEL
+  const repData = useMemo(() => {
+    if (!selectedProvince || !selectedLel) return [];
+    const filtered = result.territoryResults.filter((tr) => {
+      return tr.territory.province === selectedProvince &&
+        (tr.territory.lel || '未分配') === selectedLel;
+    });
 
     return filtered.map((tr) => {
       const tIdx = territories.findIndex((t) => t.id === tr.territory.id);
@@ -121,13 +149,28 @@ export default function TerritoryMap({ result, hospitals, territories }: Territo
         id: tr.territory.id,
         name: tr.territory.trtyCode,
         rep: tr.territory.rep,
-        lel: tr.territory.lel || '',
         color: COLORS[(tIdx >= 0 ? tIdx : 0) % COLORS.length],
         hospitalCount: tr.hospitalCount,
         index: tr.totalIndex,
       };
     }).sort((a, b) => b.index - a.index);
-  }, [result, territories, selectedProvince]);
+  }, [result, territories, selectedProvince, selectedLel]);
+
+  // Determine which territory IDs are "active" for map filtering
+  const activeTerritoryIds = useMemo(() => {
+    if (selectedTerritory) return new Set([selectedTerritory]);
+    if (selectedLel && selectedProvince) {
+      const tIds = territories
+        .filter((t) => t.province === selectedProvince && (t.lel || '未分配') === selectedLel)
+        .map((t) => t.id);
+      return new Set(tIds);
+    }
+    if (selectedProvince) {
+      const tIds = territories.filter((t) => t.province === selectedProvince).map((t) => t.id);
+      return new Set(tIds);
+    }
+    return null; // show all
+  }, [selectedProvince, selectedLel, selectedTerritory, territories]);
 
   // Initialize map
   useEffect(() => {
@@ -163,7 +206,7 @@ export default function TerritoryMap({ result, hospitals, territories }: Territo
     };
   }, [validHospitals, fullBounds]);
 
-  // Render markers based on province/territory selection
+  // Render markers
   useEffect(() => {
     const map = leafletMap.current;
     const markers = markersRef.current;
@@ -179,10 +222,9 @@ export default function TerritoryMap({ result, hospitals, territories }: Territo
       const info = hospitalTerritoryMap.get(h.id);
       if (!info) continue;
 
-      const isHighlighted = !selectedTerritory || info.territoryId === selectedTerritory;
+      const isHighlighted = !activeTerritoryIds || activeTerritoryIds.has(info.territoryId);
       const color = COLORS[info.colorIndex % COLORS.length];
 
-      // Larger markers when drilled into a province
       const baseSize = selectedProvince ? 14 : 10;
       const size = isHighlighted ? baseSize : baseSize - 3;
       const opacity = isHighlighted ? 1 : 0.2;
@@ -219,9 +261,9 @@ export default function TerritoryMap({ result, hospitals, territories }: Territo
       `);
       markers.addLayer(marker);
     }
-  }, [validHospitals, hospitalTerritoryMap, selectedProvince, selectedTerritory]);
+  }, [validHospitals, hospitalTerritoryMap, selectedProvince, activeTerritoryIds]);
 
-  // Zoom to province or back to full view
+  // Zoom based on drill level
   useEffect(() => {
     const map = leafletMap.current;
     if (!map) return;
@@ -236,15 +278,64 @@ export default function TerritoryMap({ result, hospitals, territories }: Territo
     }
   }, [selectedProvince, provinceData, fullBounds]);
 
-  const handleProvinceClick = useCallback((name: string) => {
-    setSelectedTerritory(null);
-    setSelectedProvince((prev) => (prev === name ? null : name));
+  // Navigation handlers
+  const drillDown = useCallback((level: DrillLevel, value: string) => {
+    switch (level) {
+      case 'province':
+        setSelectedProvince(value);
+        setSelectedLel(null);
+        setSelectedTerritory(null);
+        setDrillLevel('province');
+        break;
+      case 'lel':
+        setSelectedLel(value);
+        setSelectedTerritory(null);
+        setDrillLevel('lel');
+        break;
+      case 'rep':
+        setSelectedTerritory(value);
+        setDrillLevel('rep');
+        break;
+    }
   }, []);
 
-  const handleBackToAll = useCallback(() => {
-    setSelectedProvince(null);
-    setSelectedTerritory(null);
-  }, []);
+  const drillUp = useCallback(() => {
+    switch (drillLevel) {
+      case 'province':
+        setSelectedProvince(null);
+        setSelectedLel(null);
+        setSelectedTerritory(null);
+        setDrillLevel('country');
+        break;
+      case 'lel':
+        setSelectedLel(null);
+        setSelectedTerritory(null);
+        setDrillLevel('province');
+        break;
+      case 'rep':
+        setSelectedTerritory(null);
+        setDrillLevel('lel');
+        break;
+    }
+  }, [drillLevel]);
+
+  // Breadcrumb
+  const breadcrumb = useMemo(() => {
+    const items: { label: string; level: DrillLevel; value?: string }[] = [
+      { label: '全国', level: 'country' },
+    ];
+    if (selectedProvince) {
+      items.push({ label: selectedProvince, level: 'province', value: selectedProvince });
+    }
+    if (selectedLel) {
+      items.push({ label: `LEL: ${selectedLel}`, level: 'lel', value: selectedLel });
+    }
+    if (selectedTerritory) {
+      const rep = repData.find((r) => r.id === selectedTerritory);
+      items.push({ label: rep ? `${rep.name} (${rep.rep})` : selectedTerritory, level: 'rep', value: selectedTerritory });
+    }
+    return items;
+  }, [selectedProvince, selectedLel, selectedTerritory, repData]);
 
   if (validHospitals.length === 0) {
     return (
@@ -259,20 +350,52 @@ export default function TerritoryMap({ result, hospitals, territories }: Territo
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+      {/* Header with breadcrumb */}
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-gray-700">
-          辖区地图分布
-          {selectedProvince && (
-            <span className="ml-2 text-blue-600 font-bold">— {selectedProvince}</span>
-          )}
-        </h3>
-        {selectedProvince && (
+        <div className="flex items-center gap-1 text-sm">
+          <span className="font-semibold text-gray-700">辖区地图分布</span>
+          <span className="text-gray-300 mx-1">|</span>
+          {breadcrumb.map((item, i) => {
+            const isLast = i === breadcrumb.length - 1;
+            return (
+              <span key={item.level} className="flex items-center">
+                {i > 0 && <span className="text-gray-300 mx-1">/</span>}
+                {isLast ? (
+                  <span className="text-blue-600 font-medium">{item.label}</span>
+                ) : (
+                  <button
+                    onClick={() => {
+                      // Navigate to this level
+                      if (item.level === 'country') {
+                        setSelectedProvince(null);
+                        setSelectedLel(null);
+                        setSelectedTerritory(null);
+                        setDrillLevel('country');
+                      } else if (item.level === 'province') {
+                        setSelectedLel(null);
+                        setSelectedTerritory(null);
+                        setDrillLevel('province');
+                      } else if (item.level === 'lel') {
+                        setSelectedTerritory(null);
+                        setDrillLevel('lel');
+                      }
+                    }}
+                    className="text-gray-500 hover:text-blue-600 transition-colors"
+                  >
+                    {item.label}
+                  </button>
+                )}
+              </span>
+            );
+          })}
+        </div>
+        {drillLevel !== 'country' && (
           <button
-            onClick={handleBackToAll}
+            onClick={drillUp}
             className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 transition-colors px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100"
           >
             <ChevronLeft className="h-3.5 w-3.5" />
-            返回全国视图
+            返回上级
           </button>
         )}
       </div>
@@ -280,7 +403,6 @@ export default function TerritoryMap({ result, hospitals, territories }: Territo
       <div className="flex gap-4">
         {/* Sidebar */}
         <div className={`flex-shrink-0 transition-all duration-300 ${sidebarCollapsed ? 'w-8' : 'w-56'}`}>
-          {/* Collapse toggle */}
           <button
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             className="w-full flex items-center justify-center py-1 mb-2 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-50"
@@ -290,8 +412,8 @@ export default function TerritoryMap({ result, hospitals, territories }: Territo
 
           {!sidebarCollapsed && (
             <>
-              {/* Province list — shown when no province is selected */}
-              {!selectedProvince && (
+              {/* Level 1: Province list */}
+              {drillLevel === 'country' && (
                 <div>
                   <div className="text-xs text-gray-500 mb-2 font-medium">
                     省份（点击下钻）
@@ -300,7 +422,7 @@ export default function TerritoryMap({ result, hospitals, territories }: Territo
                     {provinceData.map((p) => (
                       <button
                         key={p.name}
-                        onClick={() => handleProvinceClick(p.name)}
+                        onClick={() => drillDown('province', p.name)}
                         className="w-full text-left px-2.5 py-2 rounded-lg text-xs transition-all hover:bg-blue-50 hover:text-blue-700 group flex items-center justify-between"
                       >
                         <span className="font-medium text-gray-700 group-hover:text-blue-700">
@@ -315,11 +437,36 @@ export default function TerritoryMap({ result, hospitals, territories }: Territo
                 </div>
               )}
 
-              {/* Territory legend — shown when drilled into a province */}
-              {selectedProvince && (
+              {/* Level 2: LEL list */}
+              {drillLevel === 'province' && selectedProvince && (
                 <div>
                   <div className="text-xs text-gray-500 mb-2 font-medium">
-                    辖区（点击筛选）
+                    LEL（点击下钻）
+                  </div>
+                  <div className="max-h-[460px] overflow-y-auto space-y-0.5 pr-1">
+                    {lelData.map((item) => (
+                      <button
+                        key={item.lel}
+                        onClick={() => drillDown('lel', item.lel)}
+                        className="w-full text-left px-2.5 py-2 rounded-lg text-xs transition-all hover:bg-blue-50 hover:text-blue-700 group flex items-center justify-between"
+                      >
+                        <span className="font-medium text-gray-700 group-hover:text-blue-700 truncate">
+                          {item.lel}
+                        </span>
+                        <span className="text-gray-400 group-hover:text-blue-500 tabular-nums flex-shrink-0 ml-2">
+                          {item.hospitalCount}家 · {item.territories.length}区
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Level 3: Rep (territory) list */}
+              {drillLevel === 'lel' && selectedLel && (
+                <div>
+                  <div className="text-xs text-gray-500 mb-2 font-medium">
+                    Rep / 辖区（点击筛选）
                   </div>
                   <div className="max-h-[460px] overflow-y-auto space-y-0.5 pr-1">
                     <button
@@ -333,14 +480,10 @@ export default function TerritoryMap({ result, hospitals, territories }: Territo
                       全部辖区
                     </button>
 
-                    {legendData.map((item) => (
+                    {repData.map((item) => (
                       <button
                         key={item.id}
-                        onClick={() =>
-                          setSelectedTerritory(
-                            selectedTerritory === item.id ? null : item.id
-                          )
-                        }
+                        onClick={() => drillDown('rep', item.id)}
                         className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition-all flex items-center gap-2 ${
                           selectedTerritory === item.id
                             ? 'bg-gray-100 font-semibold'
@@ -355,11 +498,59 @@ export default function TerritoryMap({ result, hospitals, territories }: Territo
                         />
                         <div className="flex-1 min-w-0">
                           <div className="text-gray-700 truncate">{item.name}</div>
-                          {(item.rep || item.lel) && (
-                            <div className="text-gray-400 truncate text-[10px]">
-                              {item.rep}{item.rep && item.lel ? ' · ' : ''}{item.lel && `LEL: ${item.lel}`}
-                            </div>
-                          )}
+                          <div className="text-gray-400 truncate text-[10px]">{item.rep}</div>
+                        </div>
+                        <span className="text-gray-400 flex-shrink-0 tabular-nums">
+                          {item.hospitalCount}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Level 4: Selected rep detail */}
+              {drillLevel === 'rep' && selectedTerritory && (
+                <div>
+                  <div className="text-xs text-gray-500 mb-2 font-medium">
+                    当前辖区
+                  </div>
+                  <div className="max-h-[460px] overflow-y-auto space-y-0.5 pr-1">
+                    {repData.filter((r) => r.id === selectedTerritory).map((item) => (
+                      <div
+                        key={item.id}
+                        className="px-2.5 py-3 rounded-lg bg-blue-50 border border-blue-200"
+                      >
+                        <div className="flex items-center gap-2 mb-2">
+                          <span
+                            className="inline-block w-3 h-3 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: item.color }}
+                          />
+                          <span className="text-sm font-semibold text-gray-800">{item.name}</span>
+                        </div>
+                        <div className="space-y-1 text-xs text-gray-600">
+                          <div>Rep: {item.rep}</div>
+                          <div>医院数: {item.hospitalCount}</div>
+                          <div>Index: {item.index.toFixed(0)}</div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Show other reps in same LEL for quick switching */}
+                    <div className="text-xs text-gray-400 mt-3 mb-1 font-medium">同组其他辖区</div>
+                    {repData.filter((r) => r.id !== selectedTerritory).map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => drillDown('rep', item.id)}
+                        className="w-full text-left px-2.5 py-2 rounded-lg text-xs transition-all flex items-center gap-2 opacity-60 hover:opacity-100 hover:bg-gray-50"
+                      >
+                        <span
+                          className="inline-block w-3 h-3 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: item.color }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-gray-700 truncate">{item.name}</div>
+                          <div className="text-gray-400 truncate text-[10px]">{item.rep}</div>
                         </div>
                         <span className="text-gray-400 flex-shrink-0 tabular-nums">
                           {item.hospitalCount}
@@ -381,14 +572,17 @@ export default function TerritoryMap({ result, hospitals, territories }: Territo
             style={{ height: 520 }}
           />
 
-          {/* Province badge overlay on map */}
+          {/* Province badge overlay */}
           {selectedProvince && (
             <div className="absolute top-3 left-3 z-[1000] bg-white/90 backdrop-blur-sm rounded-lg shadow-md px-3 py-2 flex items-center gap-2">
               <MapPin className="h-4 w-4 text-blue-600" />
               <span className="text-sm font-semibold text-gray-800">{selectedProvince}</span>
-              <span className="text-xs text-gray-500">
-                {provinceData.find((p) => p.name === selectedProvince)?.hospitalCount || 0} 家医院
-              </span>
+              {selectedLel && (
+                <>
+                  <span className="text-gray-300">·</span>
+                  <span className="text-xs text-gray-600">{selectedLel}</span>
+                </>
+              )}
             </div>
           )}
         </div>

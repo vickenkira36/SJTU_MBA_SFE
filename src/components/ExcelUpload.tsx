@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { Upload, FileSpreadsheet, Check, AlertCircle, Trash2, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Hospital, Territory, HistoricalAssignment, LockAssignment } from '@/types';
-import { parseHospitals, parseTerritories, parseHistoricalAssignments, parseLockAssignments, validateHospitals, validateTerritories, validateCrossTable, ValidationResult } from '@/lib/excel-parser';
+import { parseHospitals, parseHospitalBusiness, loadHcoMaster, joinWithMaster, parseTerritories, parseHistoricalAssignments, parseLockAssignments, validateHospitals, validateTerritories, validateCrossTable, ValidationResult, fillMissingDistricts } from '@/lib/excel-parser';
 
 interface ExcelUploadProps {
   onDataLoaded: (hospitals: Hospital[], territories: Territory[], historicalAssignments?: HistoricalAssignment[], lockAssignments?: LockAssignment[]) => void;
@@ -30,6 +30,7 @@ export default function ExcelUpload({ onDataLoaded, initialHospitals, initialTer
   const [territoryColumns, setTerritoryColumns] = useState<string[]>([]);
   const [historicalColumns, setHistoricalColumns] = useState<string[]>([]);
   const [lockColumns, setLockColumns] = useState<string[]>([]);
+  const [joinStatus, setJoinStatus] = useState<string>('');
 
   const handleHospitalUpload = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -37,14 +38,54 @@ export default function ExcelUpload({ onDataLoaded, initialHospitals, initialTer
       if (!file) return;
 
       setHospitalError('');
+      setJoinStatus('');
       try {
         const buffer = await file.arrayBuffer();
-        const { hospitals: parsed, columns } = parseHospitals(buffer);
-        setHospitals(parsed);
-        setHospitalFile(file.name);
-        setHospitalColumns(columns);
+
+        // 尝试解析为业务数据格式（无地理列），与主数据 join
+        setJoinStatus('正在加载 HCO 主数据...');
+        const master = await loadHcoMaster();
+        const { rows: bizRows, columns } = parseHospitalBusiness(buffer);
+        const { hospitals: joined, skipped } = joinWithMaster(bizRows, master);
+
+        if (joined.length === 0) {
+          // 主数据匹配失败，回退到完整格式解析
+          setJoinStatus('');
+          const { hospitals: parsed, columns: fullCols } = parseHospitals(buffer);
+
+          // 补全缺失的区县
+          const missingCount = parsed.filter((h) => !h.district && h.longitude && h.latitude).length;
+          if (missingCount > 0) {
+            setJoinStatus(`正在补全 ${missingCount} 家医院的区县信息...`);
+            const filled = await fillMissingDistricts(parsed, (done, total) => {
+              setJoinStatus(`正在补全区县信息 (${done}/${total})...`);
+            });
+            setJoinStatus(filled > 0 ? `已通过高德地图补全 ${filled} 家医院的区县` : '');
+          }
+
+          setHospitals(parsed);
+          setHospitalFile(file.name);
+          setHospitalColumns(fullCols);
+        } else {
+          // 主数据匹配成功
+          const statusParts = [`已关联主数据，匹配 ${joined.length} 家医院`];
+          if (skipped > 0) statusParts.push(`${skipped} 条 inscode 未匹配（已跳过）`);
+
+          // 补全主数据中缺失的区县
+          const missingDistrict = joined.filter((h) => !h.district && h.longitude && h.latitude).length;
+          if (missingDistrict > 0) {
+            setJoinStatus(statusParts.join('，') + `，正在补全 ${missingDistrict} 家区县...`);
+            await fillMissingDistricts(joined);
+          }
+
+          setJoinStatus(statusParts.join('，'));
+          setHospitals(joined);
+          setHospitalFile(file.name);
+          setHospitalColumns(columns);
+        }
       } catch (err) {
         setHospitalError(err instanceof Error ? err.message : '解析失败');
+        setJoinStatus('');
       }
     },
     []
@@ -124,10 +165,34 @@ export default function ExcelUpload({ onDataLoaded, initialHospitals, initialTer
       const histBuf = await histRes.arrayBuffer();
       const lockBuf = await lockRes.arrayBuffer();
 
-      const { hospitals: h, columns: hCols } = parseHospitals(hBuf);
       const { territories: t, columns: tCols } = parseTerritories(tBuf);
       const { assignments: hist, columns: histCols } = parseHistoricalAssignments(histBuf);
       const { lockAssignments: lock, columns: lockCols } = parseLockAssignments(lockBuf);
+
+      // 解析业务数据并与主数据 join
+      setJoinStatus('正在加载 HCO 主数据...');
+      const master = await loadHcoMaster();
+      const { rows: bizRows, columns: hCols } = parseHospitalBusiness(hBuf);
+      let h: Hospital[];
+      const { hospitals: joined, skipped } = joinWithMaster(bizRows, master);
+
+      if (joined.length > 0) {
+        h = joined;
+        const msg = [`已关联主数据，匹配 ${joined.length} 家`];
+        if (skipped > 0) msg.push(`${skipped} 条未匹配`);
+        setJoinStatus(msg.join('，'));
+
+        // 补全缺失区县
+        const missingDistrict = h.filter((hosp) => !hosp.district && hosp.longitude && hosp.latitude).length;
+        if (missingDistrict > 0) await fillMissingDistricts(h);
+      } else {
+        // 回退到完整格式
+        const { hospitals: parsed, columns: fullCols } = parseHospitals(hBuf);
+        h = parsed;
+        setJoinStatus('');
+        const missingCount = h.filter((hosp) => !hosp.district && hosp.longitude && hosp.latitude).length;
+        if (missingCount > 0) await fillMissingDistricts(h);
+      }
 
       setHospitals(h);
       setHospitalFile(`测试数据 ${h.length} 家医院`);
@@ -193,10 +258,10 @@ export default function ExcelUpload({ onDataLoaded, initialHospitals, initialTer
     <div className="max-w-5xl mx-auto">
       <div className="text-center mb-8">
         <h2 className="text-2xl font-bold text-gray-900 mb-2">数据上传</h2>
-        <p className="text-gray-600 mb-3">上传医院清单、辖区清单及可选的历史分配和锁定清单</p>
+        <p className="text-gray-600 mb-3">上传医院业务数据、辖区清单及可选的历史分配和锁定清单</p>
         <div className="flex items-center justify-center gap-4 text-sm flex-wrap">
           <span className="text-gray-600">没有数据？下载示例文件：</span>
-          <a href="/sample-hospitals.xlsx" download className="text-blue-500 hover:text-blue-700 underline">医院清单示例</a>
+          <a href="/sample-hospitals.xlsx" download className="text-blue-500 hover:text-blue-700 underline">业务数据示例</a>
           <a href="/sample-territories.xlsx" download className="text-blue-500 hover:text-blue-700 underline">辖区清单示例</a>
           <a href="/sample-historical.xlsx" download className="text-blue-500 hover:text-blue-700 underline">历史分配示例</a>
           <a href="/sample-lock-assignments.xlsx" download className="text-blue-500 hover:text-blue-700 underline">锁定清单示例</a>
@@ -215,8 +280,8 @@ export default function ExcelUpload({ onDataLoaded, initialHospitals, initialTer
         <div className="border-2 border-dashed border-gray-200 rounded-xl p-6 hover:border-blue-400 transition-colors">
           <div className="text-center">
             <FileSpreadsheet className="mx-auto h-12 w-12 text-green-500 mb-4" />
-            <h3 className="text-lg font-semibold text-gray-800 mb-1">医院清单</h3>
-            <p className="text-xs text-gray-500 mb-3">必填 · 含产品组列</p>
+            <h3 className="text-lg font-semibold text-gray-800 mb-1">医院业务数据</h3>
+            <p className="text-xs text-gray-500 mb-3">必填 · inscode + 销量/潜力/index/产品组</p>
 
             {!hospitalFile ? (
               <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors">
@@ -229,7 +294,7 @@ export default function ExcelUpload({ onDataLoaded, initialHospitals, initialTer
                 <div className="flex items-center justify-center gap-2 text-green-600">
                   <Check className="h-5 w-5" />
                   <span className="font-medium text-sm">{hospitalFile}</span>
-                  <button onClick={() => { setHospitals([]); setHospitalFile(''); setHospitalColumns([]); }} className="ml-2 text-gray-400 hover:text-red-500">
+                  <button onClick={() => { setHospitals([]); setHospitalFile(''); setHospitalColumns([]); setJoinStatus(''); }} className="ml-2 text-gray-400 hover:text-red-500">
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
@@ -237,6 +302,9 @@ export default function ExcelUpload({ onDataLoaded, initialHospitals, initialTer
                   已解析 <span className="font-bold text-blue-600">{hospitals.length}</span> 家医院
                 </div>
                 <div className="text-xs text-gray-500">识别列: {hospitalColumns.join(', ')}</div>
+                {joinStatus && (
+                  <div className="text-xs text-amber-600 mt-1">{joinStatus}</div>
+                )}
               </div>
             )}
             {hospitalError && (

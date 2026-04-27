@@ -4,6 +4,9 @@ import { Hospital, Territory, LockAssignment, HistoricalAssignment } from '@/typ
 const HOSPITAL_FIELD_MAP: Record<string, string> = {
   'inscode': 'inscode',
   'insname': 'insname',
+  '区县': 'district',
+  '区': 'district',
+  'district': 'district',
   '城市': 'city',
   '省份': 'province',
   '销量': 'sales',
@@ -82,6 +85,7 @@ export function parseHospitals(file: ArrayBuffer): { hospitals: Hospital[]; colu
       id: `H${String(idx + 1).padStart(3, '0')}`,
       inscode: String(mapped.inscode || ''),
       insname: String(mapped.insname || `医院${idx + 1}`),
+      district: String(mapped.district || ''),
       city: String(mapped.city || ''),
       province: String(mapped.province || ''),
       latitude: Number(mapped.latitude) || 0,
@@ -94,13 +98,151 @@ export function parseHospitals(file: ArrayBuffer): { hospitals: Hospital[]; colu
       productGroup: String(mapped.productGroup || ''),
       ...Object.fromEntries(
         Object.entries(mapped).filter(
-          ([k]) => !['id', 'inscode', 'insname', 'city', 'province', 'latitude', 'longitude', 'sales', 'potential', 'salesNorm', 'potentialNorm', 'index', 'productGroup'].includes(k)
+          ([k]) => !['id', 'inscode', 'insname', 'district', 'city', 'province', 'latitude', 'longitude', 'sales', 'potential', 'salesNorm', 'potentialNorm', 'index', 'productGroup'].includes(k)
         )
       ),
     };
   });
 
   return { hospitals, columns };
+}
+
+// ============================================================
+// HCO 主数据：加载 + 业务数据解析 + join
+// ============================================================
+
+interface HcoMasterRecord {
+  inscode: string;
+  insname: string;
+  district: string;
+  city: string;
+  province: string;
+  latitude: number;
+  longitude: number;
+}
+
+const HCO_MASTER_FIELD_MAP: Record<string, string> = {
+  'inscode': 'inscode',
+  'insname': 'insname',
+  '区县': 'district',
+  '城市': 'city',
+  '省份': 'province',
+  '纬度': 'latitude',
+  '经度': 'longitude',
+  '医院代码': 'inscode',
+  '医院名称': 'insname',
+};
+
+const BUSINESS_FIELD_MAP: Record<string, string> = {
+  'inscode': 'inscode',
+  '医院代码': 'inscode',
+  '销量': 'sales',
+  '潜力': 'potential',
+  '销量归一化': 'salesNorm',
+  '潜力归一化': 'potentialNorm',
+  'index': 'index',
+  '产品组': 'productGroup',
+  'productGroup': 'productGroup',
+  'product_group': 'productGroup',
+  '产品': 'productGroup',
+};
+
+let cachedMaster: Map<string, HcoMasterRecord> | null = null;
+
+/** 加载 HCO 主数据（从 /hco-master.xlsx），结果缓存 */
+export async function loadHcoMaster(): Promise<Map<string, HcoMasterRecord>> {
+  if (cachedMaster) return cachedMaster;
+
+  const res = await fetch('/hco-master.xlsx');
+  if (!res.ok) throw new Error('无法加载 HCO 主数据文件');
+  const buf = await res.arrayBuffer();
+  const wb = XLSX.read(buf, { type: 'array' });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rawData = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
+
+  const master = new Map<string, HcoMasterRecord>();
+  for (const row of rawData) {
+    const mapped = mapColumns<HcoMasterRecord>(row, HCO_MASTER_FIELD_MAP);
+    const inscode = String(mapped.inscode || '').toUpperCase();
+    if (!inscode) continue;
+    master.set(inscode, {
+      inscode: String(mapped.inscode || ''),
+      insname: String(mapped.insname || ''),
+      district: String(mapped.district || ''),
+      city: String(mapped.city || ''),
+      province: String(mapped.province || ''),
+      latitude: Number(mapped.latitude) || 0,
+      longitude: Number(mapped.longitude) || 0,
+    });
+  }
+
+  cachedMaster = master;
+  return master;
+}
+
+/** 解析业务数据 Excel（仅含 inscode + 销量/潜力/index/产品组） */
+export function parseHospitalBusiness(file: ArrayBuffer): {
+  rows: { inscode: string; sales: number; potential: number; salesNorm: number; potentialNorm: number; index: number; productGroup: string }[];
+  columns: string[];
+} {
+  const wb = XLSX.read(file, { type: 'array' });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rawData = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
+
+  if (rawData.length === 0) throw new Error('业务数据为空');
+
+  const columns = Object.keys(rawData[0]);
+  const rows = rawData.map((row) => {
+    const mapped = mapColumns<Record<string, unknown>>(row, BUSINESS_FIELD_MAP);
+    return {
+      inscode: String(mapped.inscode || ''),
+      sales: Number(mapped.sales) || 0,
+      potential: Number(mapped.potential) || 0,
+      salesNorm: Number(mapped.salesNorm) || 0,
+      potentialNorm: Number(mapped.potentialNorm) || 0,
+      index: Number(mapped.index) || 0,
+      productGroup: String(mapped.productGroup || ''),
+    };
+  });
+
+  return { rows, columns };
+}
+
+/** 将业务数据与 HCO 主数据 join，返回完整 Hospital[]。inscode 匹配不上的跳过。 */
+export function joinWithMaster(
+  businessRows: { inscode: string; sales: number; potential: number; salesNorm: number; potentialNorm: number; index: number; productGroup: string }[],
+  master: Map<string, HcoMasterRecord>
+): { hospitals: Hospital[]; skipped: number } {
+  const hospitals: Hospital[] = [];
+  let skipped = 0;
+
+  for (let idx = 0; idx < businessRows.length; idx++) {
+    const biz = businessRows[idx];
+    const key = biz.inscode.toUpperCase();
+    const m = master.get(key);
+    if (!m) {
+      skipped++;
+      continue;
+    }
+    hospitals.push({
+      id: `H${String(hospitals.length + 1).padStart(3, '0')}`,
+      inscode: m.inscode,
+      insname: m.insname,
+      district: m.district,
+      city: m.city,
+      province: m.province,
+      latitude: m.latitude,
+      longitude: m.longitude,
+      sales: biz.sales,
+      potential: biz.potential,
+      salesNorm: biz.salesNorm,
+      potentialNorm: biz.potentialNorm,
+      index: biz.index,
+      productGroup: biz.productGroup,
+    });
+  }
+
+  return { hospitals, skipped };
 }
 
 export function parseTerritories(file: ArrayBuffer): { territories: Territory[]; columns: string[] } {
@@ -158,6 +300,10 @@ export function parseHistoricalAssignments(file: ArrayBuffer): { assignments: im
     'productGroup': 'productGroup',
     'product_group': 'productGroup',
     '产品': 'productGroup',
+    '比例': 'portion',
+    'portion': 'portion',
+    'ratio': 'portion',
+    '占比': 'portion',
   };
 
   const assignments = rawData.map((row) => {
@@ -167,10 +313,12 @@ export function parseHistoricalAssignments(file: ArrayBuffer): { assignments: im
       const mappedField = fieldMap[trimmedKey] || trimmedKey;
       mapped[mappedField] = value;
     }
+    const portionVal = mapped.portion !== undefined ? Number(mapped.portion) : undefined;
     return {
       inscode: String(mapped.inscode || ''),
       trtyCode: String(mapped.trtyCode || ''),
       productGroup: String(mapped.productGroup || ''),
+      portion: portionVal !== undefined && !isNaN(portionVal) ? portionVal : undefined,
     };
   }).filter((a) => a.inscode && a.trtyCode);
 
@@ -425,3 +573,61 @@ export function validateCrossTable(
 
   return { errors, warnings };
 }
+
+// ============================================================
+// 高德逆地理编码：补全缺失的区县字段
+// ============================================================
+
+const AMAP_KEY = '607c50ad475045563bcdb62971f90f59';
+
+interface AmapRegeoResponse {
+  status: string;
+  regeocode: {
+    addressComponent: {
+      district: string;
+    };
+  };
+}
+
+/** 对区县为空且有经纬度的医院，调用高德逆地理编码补全 district 字段。返回补全数量。 */
+export async function fillMissingDistricts(
+  hospitals: Hospital[],
+  onProgress?: (filled: number, total: number) => void
+): Promise<number> {
+  const missing = hospitals.filter((h) => !h.district && h.longitude && h.latitude);
+  if (missing.length === 0) return 0;
+
+  let filled = 0;
+  const batchSize = 20;
+
+  for (let i = 0; i < missing.length; i += batchSize) {
+    const batch = missing.slice(i, i + batchSize);
+
+    const results = await Promise.allSettled(
+      batch.map(async (h) => {
+        const location = `${h.longitude},${h.latitude}`;
+        const url = `https://restapi.amap.com/v3/geocode/regeo?location=${location}&key=${AMAP_KEY}&extensions=base`;
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const data: AmapRegeoResponse = await res.json();
+        if (data.status === '1' && data.regeocode?.addressComponent?.district) {
+          return { hospital: h, district: data.regeocode.addressComponent.district };
+        }
+        return null;
+      })
+    );
+
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value) {
+        r.value.hospital.district = r.value.district;
+        filled++;
+      }
+    }
+
+    onProgress?.(filled, missing.length);
+  }
+
+  return filled;
+}
+
+

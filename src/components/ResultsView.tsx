@@ -18,7 +18,7 @@ import {
   ArrowLeft,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { OptimizationResult, Hospital, Territory, Constraint } from '@/types';
+import { OptimizationResult, Hospital, Territory, Constraint, HistoricalAssignment } from '@/types';
 
 const TerritoryMap = dynamic(() => import('./TerritoryMap'), { ssr: false });
 
@@ -27,6 +27,7 @@ interface ResultsViewProps {
   hospitals: Hospital[];
   territories: Territory[];
   constraints: Constraint[];
+  historicalAssignments?: HistoricalAssignment[];
   onBack: () => void;
   onRestart: () => void;
 }
@@ -42,6 +43,7 @@ export default function ResultsView({
   hospitals,
   territories,
   constraints,
+  historicalAssignments,
   onBack,
   onRestart,
 }: ResultsViewProps) {
@@ -372,6 +374,16 @@ export default function ResultsView({
         </ResponsiveContainer>
       </div>
 
+      {/* Historical comparison analysis */}
+      {historicalAssignments && historicalAssignments.length > 0 && (
+        <HistoricalComparison
+          result={filteredResult}
+          hospitals={hospitals}
+          territories={territories}
+          historicalAssignments={historicalAssignments}
+        />
+      )}
+
       {/* Chart 2: Territory Summary — city count, hospital count, city list */}
       <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
         <h3 className="text-sm font-semibold text-gray-700 mb-4">图表2：各辖区城市与医院分布</h3>
@@ -502,6 +514,233 @@ export default function ResultsView({
           重新开始
         </button>
       </div>
+    </div>
+  );
+}
+
+// Historical comparison sub-component
+function HistoricalComparison({
+  result,
+  hospitals,
+  territories,
+  historicalAssignments,
+}: {
+  result: OptimizationResult;
+  hospitals: Hospital[];
+  territories: Territory[];
+  historicalAssignments: HistoricalAssignment[];
+}) {
+  const analysis = useMemo(() => {
+    const hospMap = new Map(hospitals.map((h) => [h.inscode, h]));
+    const trtyMap = new Map(territories.map((t) => [t.trtyCode, t]));
+
+    // Historical: inscode -> Set<trtyCode>
+    const histByHospital = new Map<string, Set<string>>();
+    for (const ha of historicalAssignments) {
+      if (!histByHospital.has(ha.inscode)) histByHospital.set(ha.inscode, new Set());
+      histByHospital.get(ha.inscode)!.add(ha.trtyCode);
+    }
+
+    // Current: inscode -> Set<trtyCode>
+    const currByHospital = new Map<string, Set<string>>();
+    for (const a of result.assignments) {
+      const hosp = hospitals.find((h) => h.id === a.hospitalId);
+      if (!hosp) continue;
+      if (!currByHospital.has(hosp.inscode)) currByHospital.set(hosp.inscode, new Set());
+      currByHospital.get(hosp.inscode)!.add(a.territoryName);
+    }
+
+    // Per-territory changes
+    // Historical: trtyCode -> Set<inscode>
+    const histByTrty = new Map<string, Set<string>>();
+    for (const ha of historicalAssignments) {
+      if (!histByTrty.has(ha.trtyCode)) histByTrty.set(ha.trtyCode, new Set());
+      histByTrty.get(ha.trtyCode)!.add(ha.inscode);
+    }
+
+    // Current: trtyCode -> Set<inscode>
+    const currByTrty = new Map<string, Set<string>>();
+    for (const a of result.assignments) {
+      const hosp = hospitals.find((h) => h.id === a.hospitalId);
+      if (!hosp) continue;
+      if (!currByTrty.has(a.territoryName)) currByTrty.set(a.territoryName, new Set());
+      currByTrty.get(a.territoryName)!.add(hosp.inscode);
+    }
+
+    // All territory codes
+    const allTrtyCodes = new Set([...histByTrty.keys(), ...currByTrty.keys()]);
+
+    type TrtyChange = {
+      trtyCode: string;
+      rep: string;
+      lel: string;
+      added: { inscode: string; insname: string; index: number }[];
+      removed: { inscode: string; insname: string; index: number }[];
+      kept: number;
+      addedIndex: number;
+      removedIndex: number;
+    };
+
+    const changes: TrtyChange[] = [];
+    let totalAdded = 0;
+    let totalRemoved = 0;
+    let totalKept = 0;
+
+    for (const trtyCode of allTrtyCodes) {
+      const hist = histByTrty.get(trtyCode) || new Set<string>();
+      const curr = currByTrty.get(trtyCode) || new Set<string>();
+      const trty = trtyMap.get(trtyCode);
+
+      const added: TrtyChange['added'] = [];
+      const removed: TrtyChange['removed'] = [];
+      let kept = 0;
+
+      for (const inscode of curr) {
+        if (!hist.has(inscode)) {
+          const h = hospMap.get(inscode);
+          added.push({ inscode, insname: h?.insname || inscode, index: h?.index || 0 });
+        } else {
+          kept++;
+        }
+      }
+
+      for (const inscode of hist) {
+        if (!curr.has(inscode)) {
+          const h = hospMap.get(inscode);
+          removed.push({ inscode, insname: h?.insname || inscode, index: h?.index || 0 });
+        }
+      }
+
+      if (added.length > 0 || removed.length > 0) {
+        const addedIndex = added.reduce((s, h) => s + h.index, 0);
+        const removedIndex = removed.reduce((s, h) => s + h.index, 0);
+        changes.push({
+          trtyCode,
+          rep: trty?.rep || '',
+          lel: trty?.lel || '',
+          added: added.sort((a, b) => b.index - a.index),
+          removed: removed.sort((a, b) => b.index - a.index),
+          kept,
+          addedIndex,
+          removedIndex,
+        });
+        totalAdded += added.length;
+        totalRemoved += removed.length;
+      }
+      totalKept += kept;
+    }
+
+    // Sort by total change count desc
+    changes.sort((a, b) => (b.added.length + b.removed.length) - (a.added.length + a.removed.length));
+
+    return { changes, totalAdded, totalRemoved, totalKept };
+  }, [result, hospitals, territories, historicalAssignments]);
+
+  const [expanded, setExpanded] = useState(false);
+  const displayChanges = expanded ? analysis.changes : analysis.changes.slice(0, 10);
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+      <h3 className="text-sm font-semibold text-gray-700 mb-4">历史对比分析：当前分配 vs 历史分配</h3>
+
+      {/* Summary stats */}
+      <div className="grid grid-cols-3 gap-4 mb-4">
+        <div className="bg-green-50 rounded-lg p-3 text-center">
+          <div className="text-lg font-bold text-green-700">+{analysis.totalAdded}</div>
+          <div className="text-xs text-green-600">新增分配</div>
+        </div>
+        <div className="bg-red-50 rounded-lg p-3 text-center">
+          <div className="text-lg font-bold text-red-700">-{analysis.totalRemoved}</div>
+          <div className="text-xs text-red-600">移除分配</div>
+        </div>
+        <div className="bg-gray-50 rounded-lg p-3 text-center">
+          <div className="text-lg font-bold text-gray-700">{analysis.totalKept}</div>
+          <div className="text-xs text-gray-500">保持不变</div>
+        </div>
+      </div>
+
+      {analysis.changes.length === 0 ? (
+        <div className="text-sm text-gray-500 text-center py-4">当前分配与历史分配完全一致</div>
+      ) : (
+        <>
+          {/* Per-territory change table */}
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-gray-600 font-medium">辖区</th>
+                  <th className="px-3 py-2 text-left text-gray-600 font-medium">Rep</th>
+                  <th className="px-3 py-2 text-center text-gray-600 font-medium">保持</th>
+                  <th className="px-3 py-2 text-left text-green-700 font-medium">新增医院</th>
+                  <th className="px-3 py-2 text-left text-red-700 font-medium">移除医院</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayChanges.map((c) => (
+                  <tr key={c.trtyCode} className="border-t border-gray-100">
+                    <td className="px-3 py-2 text-gray-800 font-medium whitespace-nowrap">
+                      {c.trtyCode}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                      <div>{c.rep}</div>
+                      {c.lel && <div className="text-[10px] text-gray-400">LEL: {c.lel}</div>}
+                    </td>
+                    <td className="px-3 py-2 text-center text-gray-500">{c.kept}</td>
+                    <td className="px-3 py-2">
+                      {c.added.length > 0 ? (
+                        <div className="space-y-0.5">
+                          {c.added.map((h) => (
+                            <div key={h.inscode} className="text-xs text-green-700">
+                              <span className="font-medium">+</span> {h.insname}
+                              <span className="text-green-500 ml-1">({h.index.toFixed(0)})</span>
+                            </div>
+                          ))}
+                          <div className="text-[10px] text-green-500 mt-0.5">
+                            合计 +{c.addedIndex.toFixed(0)} index
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      {c.removed.length > 0 ? (
+                        <div className="space-y-0.5">
+                          {c.removed.map((h) => (
+                            <div key={h.inscode} className="text-xs text-red-700">
+                              <span className="font-medium">-</span> {h.insname}
+                              <span className="text-red-500 ml-1">({h.index.toFixed(0)})</span>
+                            </div>
+                          ))}
+                          <div className="text-[10px] text-red-500 mt-0.5">
+                            合计 -{c.removedIndex.toFixed(0)} index
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Show more / less */}
+          {analysis.changes.length > 10 && (
+            <div className="text-center mt-3">
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
+              >
+                {expanded
+                  ? '收起'
+                  : `展开全部 ${analysis.changes.length} 个有变动的辖区`}
+              </button>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

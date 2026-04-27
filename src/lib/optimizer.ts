@@ -23,6 +23,7 @@ interface VirtualHospital {
   originalId: string;
   inscode: string;
   insname: string;
+  district: string;
   city: string;
   province: string;
   latitude: number;
@@ -57,6 +58,7 @@ interface EffectiveConstraints {
   cityThreshold: number;        // default 1
   capacityThreshold: number;    // default 1
   historicalThreshold: number;  // default 200, 0 = no historical penalty
+  districtThreshold: number;    // default 1, how many extra districts = 1 penalty unit
   hasHistorical: boolean;       // whether historical constraint exists
 }
 
@@ -72,6 +74,7 @@ function buildEffectiveConstraints(constraints: Constraint[]): EffectiveConstrai
   const cityC = constraints.find((c) => c.type === 'city_limit');
   const capC = constraints.find((c) => c.type === 'capacity');
   const histC = constraints.find((c) => c.type === 'historical_stability');
+  const districtC = constraints.find((c) => c.type === 'district_concentration');
 
   const indexMin = indexC ? Number(indexC.value) || 800 : 800;
   const indexMax = indexC?.value2 ?? 1200;
@@ -90,6 +93,7 @@ function buildEffectiveConstraints(constraints: Constraint[]): EffectiveConstrai
     cityThreshold: cityC?.threshold ?? 1,
     capacityThreshold: capC?.threshold ?? 1,
     historicalThreshold: histC?.threshold ?? 200,
+    districtThreshold: districtC?.threshold ?? 1,
     hasHistorical: !!histC,
   };
 }
@@ -98,25 +102,31 @@ function buildEffectiveConstraints(constraints: Constraint[]): EffectiveConstrai
 // 1. Preprocessing: split large-index hospitals
 // ============================================================
 
-function preprocessHospitals(hospitals: Hospital[]): VirtualHospital[] {
+function preprocessHospitals(hospitals: Hospital[], indexTarget: number = 1000): VirtualHospital[] {
   const result: VirtualHospital[] = [];
+  const splitThreshold = indexTarget * 1.5; // > 1500 triggers split
 
   for (const h of hospitals) {
-    if (h.index > 1500) {
-      const numSplits = Math.floor(h.index / 1000) + 1;
-      const portionIndex = h.index / numSplits;
-      const portionRatio = 1.0 / numSplits;
+    if (h.index > splitThreshold) {
+      // Equal split: n = round(index / indexTarget), each rep gets index/n
+      let n = Math.round(h.index / indexTarget);
+      if (n < 2) n = 2; // above splitThreshold (1.2×target) guarantees index > 1200, round(1200/1000)=1, so force 2
+      const perPortion = h.index / n;
 
+      const numSplits = n;
+
+      const portionRatio = 1 / numSplits;
       for (let i = 0; i < numSplits; i++) {
         result.push({
           originalId: h.id,
           inscode: h.inscode,
           insname: h.insname,
+          district: h.district || '',
           city: h.city,
           province: h.province,
           latitude: h.latitude,
           longitude: h.longitude,
-          index: portionIndex,
+          index: perPortion,
           sales: h.sales * portionRatio,
           potential: h.potential * portionRatio,
           portion: portionRatio,
@@ -129,6 +139,7 @@ function preprocessHospitals(hospitals: Hospital[]): VirtualHospital[] {
         originalId: h.id,
         inscode: h.inscode,
         insname: h.insname,
+        district: h.district || '',
         city: h.city,
         province: h.province,
         latitude: h.latitude,
@@ -154,14 +165,17 @@ function getGroupStats(group: VirtualHospital[]): {
   idxSum: number;
   count: number;
   cities: number;
+  districts: number;
   maxDist: number;
 } {
-  if (group.length === 0) return { idxSum: 0, count: 0, cities: 0, maxDist: 0 };
+  if (group.length === 0) return { idxSum: 0, count: 0, cities: 0, districts: 0, maxDist: 0 };
 
   const idxSum = group.reduce((s, h) => s + h.index, 0);
   const count = group.length;
   const citySet = new Set(group.map((h) => h.city).filter(Boolean));
   const cities = citySet.size;
+  const districtSet = new Set(group.map((h) => h.district).filter(Boolean));
+  const districts = districtSet.size;
 
   let maxDist = 0;
   if (group.length > 1) {
@@ -180,7 +194,7 @@ function getGroupStats(group: VirtualHospital[]): {
     }
   }
 
-  return { idxSum, count, cities, maxDist };
+  return { idxSum, count, cities, districts, maxDist };
 }
 
 // ============================================================
@@ -202,7 +216,7 @@ function calculateCost(
       continue;
     }
 
-    const { idxSum, count, cities, maxDist } = getGroupStats(group);
+    const { idxSum, count, cities, districts, maxDist } = getGroupStats(group);
 
     // Index: penalize violation outside [indexMin, indexMax]
     // penalty = (超出量 / threshold) × BASE_PENALTY
@@ -212,12 +226,7 @@ function calculateCost(
       totalCost += ((idxSum - ec.indexMax) / ec.indexThreshold) * BASE_PENALTY;
     }
 
-    // Distance constraint
-    if (maxDist > ec.maxDistanceKm) {
-      totalCost += ((maxDist - ec.maxDistanceKm) / ec.distanceThreshold) * BASE_PENALTY;
-    }
-
-    // City limit
+    // City limit (distance is handled by geographic clustering, not penalized here)
     if (cities > ec.maxCities) {
       totalCost += ((cities - ec.maxCities) / ec.cityThreshold) * BASE_PENALTY;
     }
@@ -225,6 +234,32 @@ function calculateCost(
     // Capacity limit
     if (count > ec.maxHospitals) {
       totalCost += ((count - ec.maxHospitals) / ec.capacityThreshold) * BASE_PENALTY;
+    }
+
+    // District concentration: penalize each extra district beyond 1
+    // Encourages SA to keep same-district hospitals together
+    if (districts > 1 && ec.districtThreshold > 0) {
+      totalCost += ((districts - 1) / ec.districtThreshold) * BASE_PENALTY;
+    }
+
+    // Geographic compactness: penalize max distance from any hospital to cluster centroid
+    // Uses max rather than sum/avg to specifically block outlier assignments
+    {
+      const withCoords = group.filter((h) => h.latitude && h.longitude);
+      if (withCoords.length > 1) {
+        const cLat = withCoords.reduce((s, h) => s + h.latitude, 0) / withCoords.length;
+        const cLng = withCoords.reduce((s, h) => s + h.longitude, 0) / withCoords.length;
+        let maxDistToCentroid = 0;
+        for (const h of withCoords) {
+          const d = haversineKm(h.longitude, h.latitude, cLng, cLat);
+          if (d > maxDistToCentroid) maxDistToCentroid = d;
+        }
+        // Quadratic penalty on max distance: penalizes outliers heavily
+        // 100km → 100²/100 = 100 (negligible)
+        // 200km → 200²/100 = 400 (moderate)
+        // 500km → 500²/100 = 2500 (heavy, ~0.25 BASE_PENALTY)
+        totalCost += (maxDistToCentroid * maxDistToCentroid) / 100;
+      }
     }
 
     // (Historical stability is calculated globally after the per-territory loop)
@@ -284,7 +319,697 @@ function calculateCost(
 }
 
 // ============================================================
-// 4. Local search optimization (ported from Python)
+// 4a. Four-layer clustering: big hospitals → districts → cities → combination
+// ============================================================
+
+function fourLayerClustering(
+  hospitals: VirtualHospital[],
+  n: number,
+  maxCities: number,
+  indexTarget: number,
+  lockMap?: LockMap
+): VirtualHospital[][] {
+  if (hospitals.length <= n) {
+    // Fewer hospitals than clusters: one per cluster
+    const clusters: VirtualHospital[][] = Array.from({ length: n }, () => []);
+    hospitals.forEach((h, i) => clusters[i % n].push(h));
+    return clusters;
+  }
+
+  const indexMin = indexTarget * 0.8; // 800 by default
+  const clusters: VirtualHospital[][] = [];
+  const assigned = new Set<number>(); // indices into hospitals[] that are already assigned
+
+  // --- Layer 1: Big hospitals and split portions ---
+  // Phase 1a: VHs with index >= indexTarget get their own cluster
+  for (let i = 0; i < hospitals.length; i++) {
+    if (assigned.has(i)) continue;
+    if (hospitals[i].index >= indexTarget && clusters.length < n) {
+      clusters.push([hospitals[i]]);
+      assigned.add(i);
+    }
+  }
+
+  // Phase 1b: all remaining split portions (portion < 1) must be dispersed
+  // into different clusters — never two portions of the same hospital in one cluster
+  for (let i = 0; i < hospitals.length; i++) {
+    if (assigned.has(i)) continue;
+    const vh = hospitals[i];
+    if (vh.portion >= 0.999) continue; // not a split portion
+
+    // Try to create a new cluster if possible
+    if (clusters.length < n) {
+      clusters.push([vh]);
+      assigned.add(i);
+      continue;
+    }
+
+    // Find cluster with lowest index that doesn't have this originalId
+    let bestCluster = -1;
+    let bestIndex = Infinity;
+    for (let ci = 0; ci < clusters.length; ci++) {
+      if (clusters[ci].some(v => v.originalId === vh.originalId)) continue;
+      const clusterIdx = clusters[ci].reduce((s, v) => s + v.index, 0);
+      if (clusterIdx < bestIndex) {
+        bestIndex = clusterIdx;
+        bestCluster = ci;
+      }
+    }
+    if (bestCluster >= 0) {
+      clusters[bestCluster].push(vh);
+      assigned.add(i);
+    }
+  }
+
+  // --- Layer 2: Districts ---
+  // Group remaining hospitals by district, find districts with enough index
+  const districtMap = new Map<string, { indices: number[]; totalIndex: number }>();
+  for (let i = 0; i < hospitals.length; i++) {
+    if (assigned.has(i)) continue;
+    const dist = hospitals[i].district || '';
+    if (!dist) continue;
+    if (!districtMap.has(dist)) districtMap.set(dist, { indices: [], totalIndex: 0 });
+    const d = districtMap.get(dist)!;
+    d.indices.push(i);
+    d.totalIndex += hospitals[i].index;
+  }
+
+  // Districts with index >= indexMin can form clusters
+  const districtsByIndex = Array.from(districtMap.entries())
+    .filter(([, d]) => d.totalIndex >= indexMin)
+    .sort((a, b) => b[1].totalIndex - a[1].totalIndex);
+
+  for (const [, d] of districtsByIndex) {
+    if (clusters.length >= n) break;
+    const numClusters = Math.min(
+      Math.round(d.totalIndex / indexTarget),
+      n - clusters.length
+    );
+    if (numClusters <= 0) continue;
+
+    if (numClusters === 1) {
+      const cluster: VirtualHospital[] = [];
+      for (const idx of d.indices) {
+        if (!assigned.has(idx)) {
+          cluster.push(hospitals[idx]);
+          assigned.add(idx);
+        }
+      }
+      if (cluster.length > 0) clusters.push(cluster);
+    } else {
+      // Multiple clusters from one district: use Maximin to select seeds, then assign
+      const available = d.indices.filter((idx) => !assigned.has(idx));
+      const seeds = maximinSelect(hospitals, available, numClusters);
+      const subClusters: VirtualHospital[][] = seeds.map((sIdx) => [hospitals[sIdx]]);
+      const seedAssigned = new Set(seeds);
+
+      for (const idx of available) {
+        if (seedAssigned.has(idx)) continue;
+        // Assign to nearest seed cluster
+        let bestCluster = 0;
+        let bestDist = Infinity;
+        for (let ci = 0; ci < subClusters.length; ci++) {
+          const seed = subClusters[ci][0];
+          const dist = haversineKm(hospitals[idx].longitude, hospitals[idx].latitude, seed.longitude, seed.latitude);
+          if (dist < bestDist) { bestDist = dist; bestCluster = ci; }
+        }
+        subClusters[bestCluster].push(hospitals[idx]);
+      }
+
+      for (const sc of subClusters) {
+        if (clusters.length >= n) break;
+        clusters.push(sc);
+      }
+      for (const idx of available) assigned.add(idx);
+    }
+  }
+
+  // --- Layer 3: Cities ---
+  // Group remaining hospitals by city
+  const cityMap = new Map<string, { indices: number[]; totalIndex: number }>();
+  for (let i = 0; i < hospitals.length; i++) {
+    if (assigned.has(i)) continue;
+    const city = hospitals[i].city || '未知';
+    if (!cityMap.has(city)) cityMap.set(city, { indices: [], totalIndex: 0 });
+    const c = cityMap.get(city)!;
+    c.indices.push(i);
+    c.totalIndex += hospitals[i].index;
+  }
+
+  const citiesByIndex = Array.from(cityMap.entries())
+    .filter(([, c]) => c.totalIndex >= indexMin)
+    .sort((a, b) => b[1].totalIndex - a[1].totalIndex);
+
+  for (const [, c] of citiesByIndex) {
+    if (clusters.length >= n) break;
+    const numClusters = Math.min(
+      Math.round(c.totalIndex / indexTarget),
+      n - clusters.length
+    );
+    if (numClusters <= 0) continue;
+
+    const available = c.indices.filter((idx) => !assigned.has(idx));
+    if (available.length === 0) continue;
+
+    if (numClusters === 1) {
+      const cluster: VirtualHospital[] = [];
+      for (const idx of available) {
+        cluster.push(hospitals[idx]);
+        assigned.add(idx);
+      }
+      if (cluster.length > 0) clusters.push(cluster);
+    } else {
+      const seeds = maximinSelect(hospitals, available, numClusters);
+      const subClusters: VirtualHospital[][] = seeds.map((sIdx) => [hospitals[sIdx]]);
+      const seedAssigned = new Set(seeds);
+
+      for (const idx of available) {
+        if (seedAssigned.has(idx)) continue;
+        let bestCluster = 0;
+        let bestDist = Infinity;
+        for (let ci = 0; ci < subClusters.length; ci++) {
+          const seed = subClusters[ci][0];
+          const dist = haversineKm(hospitals[idx].longitude, hospitals[idx].latitude, seed.longitude, seed.latitude);
+          if (dist < bestDist) { bestDist = dist; bestCluster = ci; }
+        }
+        subClusters[bestCluster].push(hospitals[idx]);
+      }
+
+      for (const sc of subClusters) {
+        if (clusters.length >= n) break;
+        clusters.push(sc);
+      }
+      for (const idx of available) assigned.add(idx);
+    }
+  }
+
+  // --- Layer 4: Combination ---
+  // Remaining unassigned hospitals (from small cities/districts)
+  // Group by city, then merge nearby city groups by geographic distance
+  const remainingCities = new Map<string, number[]>();
+  for (let i = 0; i < hospitals.length; i++) {
+    if (assigned.has(i)) continue;
+    const city = hospitals[i].city || '未知';
+    if (!remainingCities.has(city)) remainingCities.set(city, []);
+    remainingCities.get(city)!.push(i);
+  }
+
+  if (remainingCities.size > 0 && clusters.length < n) {
+    // Calculate centroid for each remaining city group
+    const cityGroups = Array.from(remainingCities.entries()).map(([city, indices]) => {
+      const hosps = indices.map((i) => hospitals[i]);
+      const lat = hosps.reduce((s, h) => s + h.latitude, 0) / hosps.length;
+      const lng = hosps.reduce((s, h) => s + h.longitude, 0) / hosps.length;
+      const totalIndex = hosps.reduce((s, h) => s + h.index, 0);
+      return { city, indices, lat, lng, totalIndex };
+    });
+
+    // Greedy merge: repeatedly merge the two nearest city groups until
+    // we have (n - clusters.length) groups or fewer
+    const slotsLeft = n - clusters.length;
+
+    while (cityGroups.length > slotsLeft) {
+      // Find two nearest groups
+      let bestI = 0, bestJ = 1, bestDist = Infinity;
+      for (let i = 0; i < cityGroups.length; i++) {
+        for (let j = i + 1; j < cityGroups.length; j++) {
+          const d = haversineKm(cityGroups[i].lng, cityGroups[i].lat, cityGroups[j].lng, cityGroups[j].lat);
+          if (d < bestDist) { bestDist = d; bestI = i; bestJ = j; }
+        }
+      }
+
+      // Merge j into i
+      const merged = cityGroups[bestI];
+      const other = cityGroups[bestJ];
+      const totalIdx = merged.totalIndex + other.totalIndex;
+      const totalCount = merged.indices.length + other.indices.length;
+      merged.lat = (merged.lat * merged.indices.length + other.lat * other.indices.length) / totalCount;
+      merged.lng = (merged.lng * merged.indices.length + other.lng * other.indices.length) / totalCount;
+      merged.indices.push(...other.indices);
+      merged.totalIndex = totalIdx;
+      merged.city = merged.city + '+' + other.city;
+      cityGroups.splice(bestJ, 1);
+    }
+
+    // Create clusters from merged groups
+    for (const group of cityGroups) {
+      if (clusters.length >= n) break;
+      const cluster: VirtualHospital[] = [];
+      for (const idx of group.indices) {
+        cluster.push(hospitals[idx]);
+        assigned.add(idx);
+      }
+      if (cluster.length > 0) clusters.push(cluster);
+    }
+  }
+
+  // Any remaining unassigned hospitals: assign to nearest cluster
+  for (let i = 0; i < hospitals.length; i++) {
+    if (assigned.has(i)) continue;
+    if (clusters.length === 0) { clusters.push([]); }
+    let bestCluster = 0;
+    let bestDist = Infinity;
+    for (let ci = 0; ci < clusters.length; ci++) {
+      if (clusters[ci].length === 0) continue;
+      const centroid = {
+        lat: clusters[ci].reduce((s, h) => s + h.latitude, 0) / clusters[ci].length,
+        lng: clusters[ci].reduce((s, h) => s + h.longitude, 0) / clusters[ci].length,
+      };
+      const d = haversineKm(hospitals[i].longitude, hospitals[i].latitude, centroid.lng, centroid.lat);
+      if (d < bestDist) { bestDist = d; bestCluster = ci; }
+    }
+    clusters[bestCluster].push(hospitals[i]);
+    assigned.add(i);
+  }
+
+  // If we have fewer clusters than n, split the largest cluster
+  while (clusters.length < n) {
+    // Find cluster with highest total index
+    let maxIdx = 0;
+    let maxCluster = 0;
+    for (let ci = 0; ci < clusters.length; ci++) {
+      const idx = clusters[ci].reduce((s, h) => s + h.index, 0);
+      if (idx > maxIdx && clusters[ci].length >= 2) { maxIdx = idx; maxCluster = ci; }
+    }
+    if (clusters[maxCluster].length < 2) break;
+
+    // Split using Maximin: pick 2 seeds, assign rest to nearest
+    const clusterHosps = clusters[maxCluster];
+    const indices = clusterHosps.map((_, i) => i);
+    const seedsLocal = maximinSelect(clusterHosps, indices, 2);
+    const a: VirtualHospital[] = [clusterHosps[seedsLocal[0]]];
+    const b: VirtualHospital[] = [clusterHosps[seedsLocal[1]]];
+    for (let i = 0; i < clusterHosps.length; i++) {
+      if (i === seedsLocal[0] || i === seedsLocal[1]) continue;
+      const dA = haversineKm(clusterHosps[i].longitude, clusterHosps[i].latitude, a[0].longitude, a[0].latitude);
+      const dB = haversineKm(clusterHosps[i].longitude, clusterHosps[i].latitude, b[0].longitude, b[0].latitude);
+      if (dA <= dB) a.push(clusterHosps[i]);
+      else b.push(clusterHosps[i]);
+    }
+    clusters[maxCluster] = a;
+    clusters.push(b);
+  }
+
+  // Handle locked hospitals: move them to their designated clusters
+  // For split hospitals, disperse portions across different allowed clusters
+  if (lockMap && lockMap.size > 0) {
+    // Collect all locked VHs grouped by inscode
+    const lockedByInscode = new Map<string, { vh: VirtualHospital; ci: number; hi: number }[]>();
+    for (let ci = 0; ci < clusters.length; ci++) {
+      for (let hi = 0; hi < clusters[ci].length; hi++) {
+        const vh = clusters[ci][hi];
+        const allowedSet = lockMap.get(vh.inscode);
+        if (allowedSet && allowedSet.size > 0) {
+          if (!lockedByInscode.has(vh.inscode)) lockedByInscode.set(vh.inscode, []);
+          lockedByInscode.get(vh.inscode)!.push({ vh, ci, hi });
+        }
+      }
+    }
+
+    for (const [inscode, entries] of lockedByInscode) {
+      const allowedSet = lockMap.get(inscode)!;
+      const allowedArr = Array.from(allowedSet).filter(idx => idx < clusters.length);
+      if (allowedArr.length === 0) continue;
+
+      const isSplit = entries.length > 1 && entries[0].vh.portion < 0.999;
+
+      if (isSplit) {
+        // Disperse split portions across different allowed clusters (round-robin)
+        // Sort allowed clusters by current index sum (ascending) to balance load
+        allowedArr.sort((a, b) => {
+          const idxA = clusters[a].reduce((s, h) => s + h.index, 0);
+          const idxB = clusters[b].reduce((s, h) => s + h.index, 0);
+          return idxA - idxB;
+        });
+
+        // Remove all portions from their current clusters first (reverse order to preserve indices)
+        const sortedEntries = [...entries].sort((a, b) => {
+          if (a.ci !== b.ci) return b.ci - a.ci;
+          return b.hi - a.hi;
+        });
+        const removedVHs: VirtualHospital[] = [];
+        for (const entry of sortedEntries) {
+          clusters[entry.ci].splice(entry.hi, 1);
+          removedVHs.push(entry.vh);
+        }
+
+        // Assign each portion to a different allowed cluster
+        for (let i = 0; i < removedVHs.length; i++) {
+          const targetCluster = allowedArr[i % allowedArr.length];
+          clusters[targetCluster].push(removedVHs[i]);
+        }
+      } else {
+        // Non-split: move to the allowed cluster with lowest index sum
+        const bestCluster = allowedArr.reduce((best, idx) => {
+          const idxSum = clusters[idx].reduce((s, h) => s + h.index, 0);
+          const bestSum = clusters[best].reduce((s, h) => s + h.index, 0);
+          return idxSum < bestSum ? idx : best;
+        }, allowedArr[0]);
+
+        for (const entry of entries) {
+          if (entry.ci !== bestCluster) {
+            // Find current position (may have shifted due to earlier removals)
+            const currentHi = clusters[entry.ci].indexOf(entry.vh);
+            if (currentHi >= 0) {
+              clusters[entry.ci].splice(currentHi, 1);
+              clusters[bestCluster].push(entry.vh);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Rebalance: ensure every cluster has at least one hospital.
+  // Donate the nearest hospital from the largest neighboring cluster.
+  for (let ci = 0; ci < clusters.length; ci++) {
+    if (clusters[ci].length > 0) continue;
+
+    // Find the cluster with the most hospitals to donate from
+    let donorIdx = -1;
+    let donorSize = 0;
+    for (let di = 0; di < clusters.length; di++) {
+      if (di === ci || clusters[di].length <= 1) continue;
+      if (clusters[di].length > donorSize) {
+        donorSize = clusters[di].length;
+        donorIdx = di;
+      }
+    }
+    if (donorIdx < 0) continue;
+
+    // Pick the hospital with the lowest index from the donor (least disruption)
+    let bestHi = 0;
+    let bestIndex = Infinity;
+    for (let hi = 0; hi < clusters[donorIdx].length; hi++) {
+      const vh = clusters[donorIdx][hi];
+      // Don't move locked hospitals out of their allowed clusters
+      if (lockMap) {
+        const allowed = lockMap.get(vh.inscode);
+        if (allowed && !allowed.has(ci)) continue;
+      }
+      if (vh.index < bestIndex) {
+        bestIndex = vh.index;
+        bestHi = hi;
+      }
+    }
+    const donated = clusters[donorIdx].splice(bestHi, 1)[0];
+    clusters[ci].push(donated);
+  }
+
+  return clusters;
+}
+
+// Maximin selection: pick k indices from candidates that are maximally spread
+function maximinSelect(hospitals: VirtualHospital[], candidates: number[], k: number): number[] {
+  if (candidates.length <= k) return [...candidates];
+
+  // First seed: highest index
+  let bestIdx = candidates[0];
+  let bestIndex = hospitals[candidates[0]].index;
+  for (const idx of candidates) {
+    if (hospitals[idx].index > bestIndex) { bestIndex = hospitals[idx].index; bestIdx = idx; }
+  }
+
+  const selected = [bestIdx];
+  const remaining = candidates.filter((i) => i !== bestIdx);
+
+  while (selected.length < k && remaining.length > 0) {
+    let bestCandidate = -1;
+    let bestMinDist = -1;
+
+    for (let ci = 0; ci < remaining.length; ci++) {
+      const cand = hospitals[remaining[ci]];
+      let minDist = Infinity;
+      for (const sIdx of selected) {
+        const d = haversineKm(cand.longitude, cand.latitude, hospitals[sIdx].longitude, hospitals[sIdx].latitude);
+        if (d < minDist) minDist = d;
+      }
+      if (minDist > bestMinDist) { bestMinDist = minDist; bestCandidate = ci; }
+    }
+
+    if (bestCandidate >= 0) {
+      selected.push(remaining[bestCandidate]);
+      remaining.splice(bestCandidate, 1);
+    } else {
+      break;
+    }
+  }
+
+  return selected;
+}
+
+// Legacy wrapper — kept for compatibility with runOptimization
+function selectSeeds(hospitals: VirtualHospital[], n: number): number[] {
+  if (hospitals.length <= n) return hospitals.map((_, i) => i);
+
+  // Group by city
+  const cityMap = new Map<string, { idx: number; index: number }[]>();
+  for (let i = 0; i < hospitals.length; i++) {
+    const city = hospitals[i].city || '未知';
+    if (!cityMap.has(city)) cityMap.set(city, []);
+    cityMap.get(city)!.push({ idx: i, index: hospitals[i].index });
+  }
+
+  // Calculate total index per city, sort by total index descending
+  const cities = Array.from(cityMap.entries())
+    .map(([city, members]) => ({
+      city,
+      members: members.sort((a, b) => b.index - a.index),
+      totalIndex: members.reduce((s, m) => s + m.index, 0),
+    }))
+    .sort((a, b) => b.totalIndex - a.totalIndex);
+
+  const totalIndex = cities.reduce((s, c) => s + c.totalIndex, 0);
+  const idealPerSeed = totalIndex / n;
+
+  // Allocate seeds per city proportional to index
+  // Cities with enough index get proportional seeds; small cities may get 0
+  const citySeeds = new Map<string, number>();
+  const fractions = cities.map((c) => ({
+    city: c.city,
+    fraction: c.totalIndex / idealPerSeed,
+  }));
+
+  // Assign integer parts first
+  let allocated = 0;
+  for (const f of fractions) {
+    const intPart = Math.floor(f.fraction);
+    citySeeds.set(f.city, intPart);
+    allocated += intPart;
+  }
+
+  // Assign remaining by largest fractional remainder
+  let remaining = n - allocated;
+  if (remaining > 0) {
+    const byRemainder = fractions
+      .map((f) => ({ city: f.city, rem: f.fraction - Math.floor(f.fraction) }))
+      .sort((a, b) => b.rem - a.rem);
+    for (let i = 0; i < remaining && i < byRemainder.length; i++) {
+      citySeeds.set(byRemainder[i].city, (citySeeds.get(byRemainder[i].city) || 0) + 1);
+    }
+  }
+
+  // Select actual seed hospitals within each city using Maximin (city-local)
+  const seeds: number[] = [];
+
+  for (const c of cities) {
+    const numSeeds = Math.min(citySeeds.get(c.city) || 0, c.members.length);
+    if (numSeeds === 0) continue;
+
+    // First seed: highest index in this city
+    const citySelectedIdx: number[] = [c.members[0].idx];
+    seeds.push(c.members[0].idx);
+
+    // Additional seeds: Maximin within city (only compare to same-city seeds)
+    const candidates = c.members.slice(1);
+    for (let s = 1; s < numSeeds && candidates.length > 0; s++) {
+      let bestCandidate = -1;
+      let bestMinDist = -1;
+
+      for (let ci = 0; ci < candidates.length; ci++) {
+        const cand = hospitals[candidates[ci].idx];
+        let minDist = Infinity;
+        for (const sIdx of citySelectedIdx) {
+          const d = haversineKm(cand.longitude, cand.latitude, hospitals[sIdx].longitude, hospitals[sIdx].latitude);
+          if (d < minDist) minDist = d;
+        }
+        if (minDist > bestMinDist) {
+          bestMinDist = minDist;
+          bestCandidate = ci;
+        }
+      }
+
+      if (bestCandidate >= 0) {
+        seeds.push(candidates[bestCandidate].idx);
+        citySelectedIdx.push(candidates[bestCandidate].idx);
+        candidates.splice(bestCandidate, 1);
+      }
+    }
+  }
+
+  return seeds;
+}
+
+// Constrained geographic clustering: assign hospitals to nearest seed,
+// respecting city count limit. Returns cluster assignments (hospitalIdx -> clusterIdx).
+function geographicClustering(
+  hospitals: VirtualHospital[],
+  n: number,
+  maxCities: number,
+  lockMap?: LockMap,
+): VirtualHospital[][] {
+  if (hospitals.length === 0 || n <= 1) return [hospitals];
+
+  const seedIndices = selectSeeds(hospitals, n);
+  const clusters: VirtualHospital[][] = Array.from({ length: n }, () => []);
+  const clusterCities: Set<string>[] = Array.from({ length: n }, () => new Set());
+
+  // Place seed hospitals in their clusters
+  for (let ci = 0; ci < seedIndices.length; ci++) {
+    const vh = hospitals[seedIndices[ci]];
+    clusters[ci].push(vh);
+    if (vh.city) clusterCities[ci].add(vh.city);
+  }
+
+  // Pre-compute distance from each hospital to each seed
+  const seedHospitals = seedIndices.map((i) => hospitals[i]);
+  const distToSeed: number[][] = hospitals.map((h) =>
+    seedHospitals.map((s) =>
+      haversineKm(h.longitude, h.latitude, s.longitude, s.latitude)
+    )
+  );
+
+  // Sort non-seed hospitals by distance to their nearest seed (closest first)
+  const nonSeedIndices = hospitals
+    .map((_, i) => i)
+    .filter((i) => !new Set(seedIndices).has(i));
+
+  nonSeedIndices.sort((a, b) => {
+    const minA = Math.min(...distToSeed[a]);
+    const minB = Math.min(...distToSeed[b]);
+    return minA - minB;
+  });
+
+  // Assign each hospital to nearest feasible cluster
+  for (const hIdx of nonSeedIndices) {
+    const vh = hospitals[hIdx];
+
+    // If locked, must go to allowed cluster
+    if (lockMap) {
+      const allowedSet = lockMap.get(vh.inscode);
+      if (allowedSet && allowedSet.size > 0) {
+        const allowedArr = Array.from(allowedSet).filter((idx) => idx < n);
+        if (allowedArr.length > 0) {
+          const tIdx = allowedArr[vh.splitId % allowedArr.length];
+          clusters[tIdx].push(vh);
+          if (vh.city) clusterCities[tIdx].add(vh.city);
+          continue;
+        }
+      }
+    }
+
+    // Sort clusters by distance to this hospital
+    const clusterOrder = distToSeed[hIdx]
+      .map((d, ci) => ({ ci, dist: d }))
+      .sort((a, b) => a.dist - b.dist);
+
+    let assigned = false;
+    for (const { ci } of clusterOrder) {
+      // Check city limit: if hospital's city is already in cluster, always OK
+      // If not, check if adding a new city would exceed limit
+      const cityOk = !vh.city ||
+        clusterCities[ci].has(vh.city) ||
+        clusterCities[ci].size < maxCities;
+
+      // Check split dispersion: no two portions of same hospital in same cluster
+      const splitOk = vh.portion >= 0.999 ||
+        !clusters[ci].some((v) => v.originalId === vh.originalId);
+
+      if (cityOk && splitOk) {
+        clusters[ci].push(vh);
+        if (vh.city) clusterCities[ci].add(vh.city);
+        assigned = true;
+        break;
+      }
+    }
+
+    // Fallback: splitOk is mandatory (hard constraint), relax cityOk only
+    if (!assigned) {
+      let fallbackAssigned = false;
+      for (const { ci } of clusterOrder) {
+        const splitOk = vh.portion >= 0.999 ||
+          !clusters[ci].some((v) => v.originalId === vh.originalId);
+        if (splitOk) {
+          clusters[ci].push(vh);
+          if (vh.city) clusterCities[ci].add(vh.city);
+          fallbackAssigned = true;
+          break;
+        }
+      }
+      // Last resort: all clusters already have a portion of this hospital (shouldn't happen if n >= numSplits)
+      if (!fallbackAssigned) {
+        const nearest = clusterOrder[0].ci;
+        clusters[nearest].push(vh);
+        if (vh.city) clusterCities[nearest].add(vh.city);
+      }
+    }
+  }
+
+  return clusters;
+}
+
+// Build adjacency map: which clusters share a city or are geographically close
+function buildAdjacency(clusters: VirtualHospital[][], seedIndices?: number[], hospitals?: VirtualHospital[]): Map<number, Set<number>> {
+  const adj = new Map<number, Set<number>>();
+  for (let i = 0; i < clusters.length; i++) {
+    adj.set(i, new Set());
+  }
+
+  // Clusters sharing a city are adjacent
+  const cityToCluster = new Map<string, number[]>();
+  for (let ci = 0; ci < clusters.length; ci++) {
+    const cities = new Set(clusters[ci].map((h) => h.city).filter(Boolean));
+    for (const city of cities) {
+      if (!cityToCluster.has(city)) cityToCluster.set(city, []);
+      cityToCluster.get(city)!.push(ci);
+    }
+  }
+  for (const [, cis] of cityToCluster) {
+    for (let i = 0; i < cis.length; i++) {
+      for (let j = i + 1; j < cis.length; j++) {
+        adj.get(cis[i])!.add(cis[j]);
+        adj.get(cis[j])!.add(cis[i]);
+      }
+    }
+  }
+
+  // Also add geographic neighbors: each cluster is adjacent to its 3 nearest clusters
+  if (clusters.length > 2) {
+    const centroids = clusters.map((cl) => {
+      if (cl.length === 0) return { lat: 0, lng: 0 };
+      const lat = cl.reduce((s, h) => s + h.latitude, 0) / cl.length;
+      const lng = cl.reduce((s, h) => s + h.longitude, 0) / cl.length;
+      return { lat, lng };
+    });
+
+    for (let i = 0; i < clusters.length; i++) {
+      const dists = centroids
+        .map((c, j) => ({ j, d: j === i ? Infinity : haversineKm(centroids[i].lng, centroids[i].lat, c.lng, c.lat) }))
+        .sort((a, b) => a.d - b.d);
+
+      const neighbors = Math.min(3, clusters.length - 1);
+      for (let k = 0; k < neighbors; k++) {
+        adj.get(i)!.add(dists[k].j);
+        adj.get(dists[k].j)!.add(i);
+      }
+    }
+  }
+
+  return adj;
+}
+
+// ============================================================
+// 4b. Local search optimization (SA) — operates on clustered assignments
 // ============================================================
 
 function runOptimization(
@@ -299,89 +1024,11 @@ function runOptimization(
     return [virtualHospitals];
   }
 
-  // Initial assignment: if historical data exists, use it; otherwise sort by geo + round-robin
-  const assignments: VirtualHospital[][] = Array.from({ length: territoryCount }, () => []);
+  // Phase 1: Four-layer clustering for initial assignment
+  const assignments = fourLayerClustering(virtualHospitals, territoryCount, ec.maxCities, ec.indexTarget, lockMap);
 
-  if (lockMap && lockMap.size > 0) {
-    // Place locked hospitals: ALL portions go to allowed territories (spread across them)
-    const unplaced: VirtualHospital[] = [];
-    for (const vh of virtualHospitals) {
-      const allowedSet = lockMap.get(vh.inscode);
-      if (allowedSet && allowedSet.size > 0) {
-        // Spread split portions across allowed territories
-        const allowedArr = Array.from(allowedSet).filter((idx) => idx < territoryCount);
-        if (allowedArr.length > 0) {
-          const tIdx = allowedArr[vh.splitId % allowedArr.length];
-          assignments[tIdx].push(vh);
-        } else {
-          unplaced.push(vh);
-        }
-      } else {
-        unplaced.push(vh);
-      }
-    }
-    // Place remaining using historical or round-robin
-    if (historicalMap && historicalMap.size > 0) {
-      const stillUnplaced: VirtualHospital[] = [];
-      for (const vh of unplaced) {
-        const histSet = historicalMap.get(vh.inscode);
-        if (histSet && histSet.size > 0) {
-          // Spread split portions across historical territories
-          const histArr = Array.from(histSet).filter((idx) => idx < territoryCount);
-          if (histArr.length > 0) {
-            const tIdx = histArr[vh.splitId % histArr.length];
-            assignments[tIdx].push(vh);
-          } else {
-            stillUnplaced.push(vh);
-          }
-        } else {
-          stillUnplaced.push(vh);
-        }
-      }
-      let rr = 0;
-      for (const vh of stillUnplaced) {
-        assignments[rr % territoryCount].push(vh);
-        rr++;
-      }
-    } else {
-      let rr = 0;
-      for (const vh of unplaced) {
-        assignments[rr % territoryCount].push(vh);
-        rr++;
-      }
-    }
-  } else if (historicalMap && historicalMap.size > 0) {
-    // Place hospitals in their historical territories
-    // Split portions are spread across historical territories
-    const unplaced: VirtualHospital[] = [];
-    for (const vh of virtualHospitals) {
-      const histSet = historicalMap.get(vh.inscode);
-      if (histSet && histSet.size > 0) {
-        const histArr = Array.from(histSet).filter((idx) => idx < territoryCount);
-        if (histArr.length > 0) {
-          const tIdx = histArr[vh.splitId % histArr.length];
-          assignments[tIdx].push(vh);
-        } else {
-          unplaced.push(vh);
-        }
-      } else {
-        unplaced.push(vh);
-      }
-    }
-    // Round-robin remaining
-    let rr = 0;
-    for (const vh of unplaced) {
-      assignments[rr % territoryCount].push(vh);
-      rr++;
-    }
-  } else {
-    const sorted = [...virtualHospitals].sort((a, b) =>
-      a.latitude !== b.latitude ? a.latitude - b.latitude : a.longitude - b.longitude
-    );
-    for (let i = 0; i < sorted.length; i++) {
-      assignments[i % territoryCount].push(sorted[i]);
-    }
-  }
+  // Build adjacency map for SA: only allow moves between adjacent clusters
+  const adjacency = buildAdjacency(assignments);
 
   let currentCost = calculateCost(assignments, ec, historicalMap, lockMap);
   const iterations = ec.iterations;
@@ -389,20 +1036,36 @@ function runOptimization(
   for (let step = 0; step < iterations; step++) {
     const mode = Math.random();
 
-    // Pick two random territories
+    // Pick a random territory, then pick a random adjacent territory
     const t1 = Math.floor(Math.random() * territoryCount);
-    let t2 = Math.floor(Math.random() * territoryCount);
-    while (t2 === t1) t2 = Math.floor(Math.random() * territoryCount);
+    const neighbors = adjacency.get(t1);
+    if (!neighbors || neighbors.size === 0) continue;
+    const neighborArr = Array.from(neighbors);
+    const t2 = neighborArr[Math.floor(Math.random() * neighborArr.length)];
 
     if (mode < 0.6 && assignments[t1].length > 0) {
+      // Never empty a territory
+      if (assignments[t1].length <= 1) continue;
+
       const hIdx = Math.floor(Math.random() * assignments[t1].length);
       const h = assignments[t1][hIdx];
 
-      // Skip locked hospitals — they cannot be moved
-      if (lockMap && lockMap.has(h.inscode)) continue;
+      // Skip locked hospitals — non-split locked hospitals cannot be moved;
+      // split locked hospitals can move within their allowed territory set
+      if (lockMap && lockMap.has(h.inscode)) {
+        const allowedSet = lockMap.get(h.inscode)!;
+        if (h.portion >= 0.999) continue; // non-split: fully locked
+        if (!allowedSet.has(t2)) continue; // split: target must be in allowed set
+      }
 
       // Skip if target territory already has another portion of the same hospital
       if (h.portion < 0.999 && assignments[t2].some(vh => vh.originalId === h.originalId)) continue;
+
+      // Skip if move would exceed city limit in target cluster
+      if (h.city && ec.maxCities > 0) {
+        const targetCities = new Set(assignments[t2].map(vh => vh.city).filter(Boolean));
+        if (!targetCities.has(h.city) && targetCities.size >= ec.maxCities) continue;
+      }
 
       assignments[t1].splice(hIdx, 1);
       assignments[t2].push(h);
@@ -421,12 +1084,37 @@ function runOptimization(
       const h1 = assignments[t1][idx1];
       const h2 = assignments[t2][idx2];
 
-      // Skip if either hospital is locked
-      if (lockMap && (lockMap.has(h1.inscode) || lockMap.has(h2.inscode))) continue;
+      // Skip if either hospital is locked (non-split locked hospitals cannot swap;
+      // split locked hospitals can swap within their allowed territory set)
+      if (lockMap) {
+        if (lockMap.has(h1.inscode)) {
+          const allowed1 = lockMap.get(h1.inscode)!;
+          if (h1.portion >= 0.999) continue; // non-split: fully locked
+          if (!allowed1.has(t2)) continue;    // split: target must be in allowed set
+        }
+        if (lockMap.has(h2.inscode)) {
+          const allowed2 = lockMap.get(h2.inscode)!;
+          if (h2.portion >= 0.999) continue;
+          if (!allowed2.has(t1)) continue;
+        }
+      }
 
       // Skip if swap would cause split portions of the same hospital to cluster
       if (h1.portion < 0.999 && assignments[t2].some(vh => vh !== h2 && vh.originalId === h1.originalId)) continue;
       if (h2.portion < 0.999 && assignments[t1].some(vh => vh !== h1 && vh.originalId === h2.originalId)) continue;
+
+      // Skip if swap would exceed city limit in either cluster
+      if (ec.maxCities > 0) {
+        // Check t2 after receiving h1 and losing h2
+        if (h1.city && h1.city !== h2.city) {
+          const t2Cities = new Set(assignments[t2].filter(vh => vh !== h2).map(vh => vh.city).filter(Boolean));
+          if (!t2Cities.has(h1.city) && t2Cities.size >= ec.maxCities) continue;
+        }
+        if (h2.city && h2.city !== h1.city) {
+          const t1Cities = new Set(assignments[t1].filter(vh => vh !== h1).map(vh => vh.city).filter(Boolean));
+          if (!t1Cities.has(h2.city) && t1Cities.size >= ec.maxCities) continue;
+        }
+      }
 
       assignments[t1][idx1] = h2;
       assignments[t2][idx2] = h1;
@@ -681,6 +1369,16 @@ function evaluateResult(
         details.push(`${c.description}: 已应用（阈值${c.threshold ?? 200}）`);
         break;
       }
+      case 'district_concentration': {
+        const districtCounts = results.map((r) => {
+          const ds = new Set(r.hospitals.map((h) => h.district).filter(Boolean));
+          return { trty: r.territory.trtyCode, count: ds.size };
+        });
+        const avgDistricts = districtCounts.reduce((s, d) => s + d.count, 0) / districtCounts.length;
+        ok = true; // soft constraint, always "considered"
+        details.push(`${c.description}: 已应用（平均${avgDistricts.toFixed(1)}个区县/辖区）`);
+        break;
+      }
       default: {
         ok = true;
         details.push(`${c.description}: 已考虑`);
@@ -705,7 +1403,7 @@ export function optimize(
   historicalAssignments?: import('@/types').HistoricalAssignment[]
 ): OptimizationResult {
   const ec = buildEffectiveConstraints(constraints);
-  const virtualHospitals = preprocessHospitals(hospitals);
+  const virtualHospitals = preprocessHospitals(hospitals, ec.indexTarget);
 
   // Build historical map: inscode -> set of territory indices
   let historicalMap: HistoricalMap | undefined;
@@ -843,11 +1541,12 @@ function optimizeSingleGroup(
           cityThreshold: regionParams.cityThreshold,
           distanceThreshold: regionParams.distanceThreshold,
           historicalThreshold: regionParams.historicalThreshold,
+          districtThreshold: regionParams.districtThreshold ?? 1,
         };
       }
     }
 
-    const virtualHospitals = preprocessHospitals(hospitals);
+    const virtualHospitals = preprocessHospitals(hospitals, ec.indexTarget);
 
     let historicalMap: HistoricalMap | undefined;
     // option2: don't use historical penalty in SA — history is handled by post-matching
@@ -874,12 +1573,10 @@ function optimizeSingleGroup(
 
     // option2 phase 2: match clusters to historical territory IDs
     if (mode === 'option2' && historicalAssignments && historicalAssignments.length > 0) {
-      const provHistorical = historicalAssignments.filter((ha) => {
-        const provInscodes = new Set(hospitals.map((h) => h.inscode));
-        return provInscodes.has(ha.inscode);
-      });
+      const provInscodes = new Set(hospitals.map((h) => h.inscode));
+      const provHistorical = historicalAssignments.filter((ha) => provInscodes.has(ha.inscode));
       if (provHistorical.length > 0) {
-        assignments = matchClustersToHistory(assignments, territories, provHistorical, lockMap);
+        assignments = matchClustersToHistory(assignments, territories, provHistorical, hospitals, lockMap);
       }
     }
 
@@ -940,6 +1637,7 @@ function optimizeSingleGroup(
         cityThreshold: regionParams.cityThreshold,
         distanceThreshold: regionParams.distanceThreshold,
         historicalThreshold: regionParams.historicalThreshold,
+        districtThreshold: regionParams.districtThreshold ?? 1,
       };
     }
 
@@ -969,7 +1667,7 @@ function optimizeSingleGroup(
       }
     }
 
-    const virtualHospitals = preprocessHospitals(provHospitals);
+    const virtualHospitals = preprocessHospitals(provHospitals, ec.indexTarget);
     // option2: disable historical penalty so SA optimizes purely for balance
     const saEc = mode === 'option2' ? { ...ec, hasHistorical: false, historicalThreshold: 0 } : ec;
     let assignments = runOptimization(virtualHospitals, provTerritories.length, saEc, provHistMap, provLockMap);
@@ -979,7 +1677,7 @@ function optimizeSingleGroup(
       const provInscodes = new Set(provHospitals.map((h) => h.inscode));
       const provHistorical = historicalAssignments.filter((ha) => provInscodes.has(ha.inscode));
       if (provHistorical.length > 0) {
-        assignments = matchClustersToHistory(assignments, provTerritories, provHistorical, provLockMap);
+        assignments = matchClustersToHistory(assignments, provTerritories, provHistorical, provHospitals, provLockMap);
       }
     }
 
@@ -1139,89 +1837,132 @@ function hungarianMaxWeight(weights: number[][]): number[] {
 }
 
 // Phase 2 of option2: match anonymous clusters to historical territory IDs
-// Reorders assignments array so that cluster indices align with historical territories
+// Uses three-level weighted matching: hospital > district > city
+// Large hospitals (high index) dominate via hospital-level weight;
+// small hospitals are matched primarily by geographic proximity (district/city).
 function matchClustersToHistory(
   assignments: VirtualHospital[][],
   territories: Territory[],
   historicalAssignments: import('@/types').HistoricalAssignment[],
+  hospitals: Hospital[],
   lockMap?: LockMap
 ): VirtualHospital[][] {
   const n = assignments.length; // = territory count
+  const trtyToIdx = new Map(territories.map((t, i) => [t.trtyCode, i]));
 
-  // Build historical territory composition: trtyIdx -> Map<inscode, indexPortion>
-  const hospHistCount = new Map<string, number>();
-  for (const ha of historicalAssignments) {
-    hospHistCount.set(ha.inscode, (hospHistCount.get(ha.inscode) || 0) + 1);
+  // Build hospital master lookup: inscode -> { district, city }
+  const hospMaster = new Map<string, { district: string; city: string }>();
+  for (const h of hospitals) {
+    hospMaster.set(h.inscode.toUpperCase(), { district: h.district || '', city: h.city || '' });
   }
 
-  const trtyToIdx = new Map(territories.map((t, i) => [t.trtyCode, i]));
-  const histComposition: Map<string, number>[] = Array.from({ length: n }, () => new Map());
+  // Build historical territory profiles: trtyIdx -> { inscodes, districts, cities }
+  // Also track per-inscode portion for weighted matching of split hospitals
+  const histInscodes: Set<string>[] = Array.from({ length: n }, () => new Set());
+  const histDistricts: Set<string>[] = Array.from({ length: n }, () => new Set());
+  const histCities: Set<string>[] = Array.from({ length: n }, () => new Set());
+  // histPortions[tIdx][inscode] = historical portion (0~1) for that territory
+  const histPortions: Map<string, number>[] = Array.from({ length: n }, () => new Map());
 
   for (const ha of historicalAssignments) {
     const tIdx = trtyToIdx.get(ha.trtyCode);
     if (tIdx === undefined || tIdx >= n) continue;
-    const count = hospHistCount.get(ha.inscode) || 1;
-    // We don't have the hospital index here, so use 1/count as a normalized weight
-    // The actual overlap calculation below will use real index values
-    histComposition[tIdx].set(ha.inscode, 1.0 / count);
-  }
-
-  // Build cluster composition: clusterIdx -> Map<inscode, totalPortionIndex>
-  const clusterComposition: Map<string, number>[] = Array.from({ length: n }, () => new Map());
-  for (let cIdx = 0; cIdx < n; cIdx++) {
-    for (const vh of assignments[cIdx]) {
-      const prev = clusterComposition[cIdx].get(vh.inscode) || 0;
-      clusterComposition[cIdx].set(vh.inscode, prev + vh.index);
+    const key = ha.inscode.toUpperCase();
+    histInscodes[tIdx].add(key);
+    if (ha.portion !== undefined) {
+      histPortions[tIdx].set(key, ha.portion);
+    }
+    const master = hospMaster.get(key);
+    if (master) {
+      if (master.district) histDistricts[tIdx].add(master.district);
+      if (master.city) histCities[tIdx].add(master.city);
     }
   }
 
-  // Build N×N overlap matrix: overlap[cluster][histTerritory]
-  // overlap = sum of index for hospitals shared between cluster and historical territory
-  const weights: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
+  // For split hospitals with historical portions, determine which territories
+  // to prioritize: keep only the top-N by portion (N = number of split portions)
+  // Build a set of (inscode, tIdx) pairs to exclude from matching
+  const splitExclusions = new Set<string>(); // "inscode|tIdx"
+  {
+    // Group historical entries by inscode
+    const histByInscode = new Map<string, { tIdx: number; portion: number }[]>();
+    for (const ha of historicalAssignments) {
+      const tIdx = trtyToIdx.get(ha.trtyCode);
+      if (tIdx === undefined || tIdx >= n) continue;
+      const key = ha.inscode.toUpperCase();
+      if (!histByInscode.has(key)) histByInscode.set(key, []);
+      histByInscode.get(key)!.push({ tIdx, portion: ha.portion ?? 1 });
+    }
 
-  for (let cIdx = 0; cIdx < n; cIdx++) {
-    for (const [inscode, clusterIndex] of clusterComposition[cIdx]) {
-      const histCount = hospHistCount.get(inscode) || 0;
-      if (histCount === 0) continue;
+    // For each split hospital, if historical rep count > split count, exclude low-portion reps
+    for (const [inscode, entries] of histByInscode) {
+      if (entries.length <= 1) continue;
+      // Find how many portions this hospital is split into
+      const vhs = assignments.flat().filter(v => v.inscode.toUpperCase() === inscode && v.portion < 0.999);
+      if (vhs.length === 0) continue; // not split
+      const splitCount = vhs.length;
+      if (entries.length <= splitCount) continue; // enough slots for all historical reps
 
-      // This hospital appears in some historical territories
-      for (const ha of historicalAssignments) {
-        if (ha.inscode !== inscode) continue;
-        const hTIdx = trtyToIdx.get(ha.trtyCode);
-        if (hTIdx === undefined || hTIdx >= n) continue;
-        // Weight = cluster's index for this hospital / histCount (proportional share)
-        weights[cIdx][hTIdx] += clusterIndex / histCount;
+      // Sort by portion descending, exclude the ones beyond splitCount
+      const sorted = [...entries].sort((a, b) => b.portion - a.portion);
+      for (let i = splitCount; i < sorted.length; i++) {
+        splitExclusions.add(`${inscode}|${sorted[i].tIdx}`);
       }
     }
   }
 
-  // Handle lock constraints: if a cluster contains locked hospitals,
-  // it must match to the territory of the locked LEL
-  const forcedMatches = new Map<number, number>(); // clusterIdx -> territoryIdx
-  if (lockMap && lockMap.size > 0) {
-    for (let cIdx = 0; cIdx < n; cIdx++) {
-      for (const vh of assignments[cIdx]) {
-        const allowedSet = lockMap.get(vh.inscode);
-        if (allowedSet && allowedSet.size > 0) {
-          // This cluster must map to one of the allowed territory indices
-          for (const tIdx of allowedSet) {
-            if (tIdx < n) {
-              forcedMatches.set(cIdx, tIdx);
-              break;
-            }
-          }
-          break;
+  // Build N×N weight matrix with three-level contributions
+  const weights: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
+
+  for (let cIdx = 0; cIdx < n; cIdx++) {
+    for (const vh of assignments[cIdx]) {
+      const key = vh.inscode.toUpperCase();
+
+      for (let tIdx = 0; tIdx < n; tIdx++) {
+        // Hospital level: index² / 500 — large hospitals dominate
+        // For split hospitals with historical portions, weight by portion
+        if (histInscodes[tIdx].has(key)) {
+          // Skip excluded low-portion historical matches
+          if (splitExclusions.has(`${key}|${tIdx}`)) continue;
+
+          const histPortion = histPortions[tIdx].get(key);
+          const portionWeight = histPortion !== undefined ? histPortion : 1;
+          weights[cIdx][tIdx] += (vh.index * vh.index * portionWeight) / 500;
+        }
+
+        // District level: +100 per hospital in a shared district
+        if (vh.district && histDistricts[tIdx].has(vh.district)) {
+          weights[cIdx][tIdx] += 100;
+        }
+
+        // City level: +50 per hospital in a shared city
+        if (vh.city && histCities[tIdx].has(vh.city)) {
+          weights[cIdx][tIdx] += 50;
         }
       }
     }
   }
 
-  // Apply forced matches by setting very high weights
-  for (const [cIdx, tIdx] of forcedMatches) {
-    weights[cIdx][tIdx] = 1e12;
+  // Handle lock constraints: boost weights for allowed territory mappings
+  // For split hospitals, each cluster containing a portion gets boosted toward all allowed territories
+  // so the Hungarian algorithm can find a valid one-to-one mapping
+  if (lockMap && lockMap.size > 0) {
+    for (let cIdx = 0; cIdx < n; cIdx++) {
+      for (const vh of assignments[cIdx]) {
+        const allowedSet = lockMap.get(vh.inscode);
+        if (allowedSet && allowedSet.size > 0) {
+          for (const tIdx of allowedSet) {
+            if (tIdx < n) {
+              weights[cIdx][tIdx] += 1e12;
+            }
+          }
+          break; // only need to check one locked VH per cluster
+        }
+      }
+    }
   }
 
-  // Run Hungarian algorithm
+  // Run Hungarian algorithm for maximum weight matching
   const matching = hungarianMaxWeight(weights);
 
   // Reorder assignments based on matching
@@ -1239,8 +1980,7 @@ function matchClustersToHistory(
   // Place any unmatched clusters in remaining slots
   let nextSlot = 0;
   for (let cIdx = 0; cIdx < n; cIdx++) {
-    if (matching[cIdx] < 0 || matching[cIdx] >= n || used.has(-1)) {
-      // Find next empty slot
+    if (matching[cIdx] < 0 || matching[cIdx] >= n || !used.has(matching[cIdx])) {
       while (nextSlot < n && reordered[nextSlot].length > 0) nextSlot++;
       if (nextSlot < n) {
         reordered[nextSlot] = assignments[cIdx];

@@ -38,19 +38,22 @@ export default function Home() {
       setConstraints(c);
       setRegionConstraints(rc);
 
-      // If historical data exists, show algorithm selection; otherwise start directly
-      if (historicalAssignments && historicalAssignments.length > 0) {
-        setStep('algo-select');
-      } else {
-        startOptimization(c, rc, 'option1');
-      }
+      setStep('algo-select');
     },
     [hospitals, territories, historicalAssignments, lockAssignments]
   );
 
   const startOptimization = useCallback(
-    (c: Constraint[], rc: RegionConstraintParams[] | undefined, mode: AlgorithmMode) => {
+    (c: Constraint[], rc: RegionConstraintParams[] | undefined, mode: AlgorithmMode, selectedProvinces?: string[]) => {
       setStep('optimizing');
+
+      // Filter data to selected provinces if specified
+      const filteredHospitals = selectedProvinces
+        ? hospitals.filter(h => selectedProvinces.includes(h.province))
+        : hospitals;
+      const filteredTerritories = selectedProvinces
+        ? territories.filter(t => selectedProvinces.includes(t.province))
+        : territories;
 
       const worker = new Worker(
         new URL('../lib/optimizer-worker.ts', import.meta.url)
@@ -74,8 +77,8 @@ export default function Home() {
       };
 
       worker.postMessage({
-        hospitals,
-        territories,
+        hospitals: filteredHospitals,
+        territories: filteredTerritories,
         constraints: c,
         historicalAssignments,
         lockAssignments,
@@ -87,8 +90,8 @@ export default function Home() {
   );
 
   const handleAlgoSelect = useCallback(
-    (mode: AlgorithmMode) => {
-      startOptimization(constraints, regionConstraints, mode);
+    (mode: AlgorithmMode, selectedProvinces?: string[]) => {
+      startOptimization(constraints, regionConstraints, mode, selectedProvinces);
     },
     [constraints, regionConstraints, startOptimization]
   );
@@ -141,6 +144,7 @@ export default function Home() {
                 <h1 className="text-xl font-bold text-gray-900">FFE 辖区分配智能体</h1>
                 <p className="text-xs text-gray-500 mt-0.5">
                   FFE Territory Alignment Agent
+                  <span className="ml-2 text-gray-300">v20260428-0058</span>
                 </p>
               </div>
             </div>
@@ -216,6 +220,8 @@ export default function Home() {
           <AlgoSelect
             onSelect={handleAlgoSelect}
             onBack={handleBackToConstraints}
+            territories={territories}
+            hasHistoricalData={!!historicalAssignments && historicalAssignments.length > 0}
           />
         )}
 
@@ -233,6 +239,7 @@ export default function Home() {
             hospitals={hospitals}
             territories={territories}
             constraints={constraints}
+            historicalAssignments={historicalAssignments}
             onBack={handleBackToConstraints}
             onRestart={handleRestart}
           />

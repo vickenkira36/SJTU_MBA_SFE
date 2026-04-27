@@ -2,6 +2,7 @@ export interface Hospital {
   id: string;
   inscode: string;
   insname: string;
+  district: string;
   city: string;
   province: string;
   latitude: number;
@@ -60,12 +61,14 @@ export type ConstraintType =
   | 'sales'                // 销量均衡
   | 'potential'            // 潜力均衡
   | 'historical_stability' // 历史分配稳定性
+  | 'district_concentration' // 区县集中度
   | 'custom';
 
 export interface HistoricalAssignment {
   inscode: string;
   trtyCode: string;
   productGroup: string;
+  portion?: number; // 0~1, historical coverage ratio per rep (default 1)
 }
 
 export interface LockAssignment {
@@ -89,6 +92,7 @@ export interface RegionConstraintParams {
   cityThreshold: number;         // 城市数超出多少 = 1份惩罚 (default 1)
   distanceThreshold: number;     // 距离超出多少km = 1份惩罚 (default 10)
   historicalThreshold: number;   // 历史变动index多少 = 1份惩罚 (default 200)
+  districtThreshold: number;     // 区县数超出多少 = 1份惩罚 (default 1)
 }
 
 export interface PresetConstraint extends Constraint {
