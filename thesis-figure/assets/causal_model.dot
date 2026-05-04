@@ -1,0 +1,96 @@
+// Template: Causal / Relationship Model (因果关系模型图)
+// Usage: Variable relationships with +/- correlation, theoretical models
+// Customize: Replace node labels, edge labels (+/-), add/remove variables
+
+digraph G {
+    rankdir=LR;
+    dpi=300;
+    bgcolor="white";
+    fontname="Noto Sans CJK SC";
+    nodesep=0.4;
+    ranksep=1.2;
+
+    node [fontname="Noto Sans CJK SC", shape=none, margin="0"];
+    edge [fontname="Noto Sans CJK SC", color="black", penwidth=1.2, arrowsize=0.8];
+
+    // --- Independent variables (left column) ---
+    v1 [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6">
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">自变量 1</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    v2 [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6">
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">自变量 2</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    v3 [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6">
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">自变量 3</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    v4 [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6">
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">自变量 4</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    // --- Mediator variables (middle column) ---
+    m1 [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6"
+               BGCOLOR="#f0f0f0">
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10"><B>中介变量 1</B></FONT></TD></TR>
+        </TABLE>
+    >];
+
+    m2 [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6"
+               BGCOLOR="#f0f0f0">
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10"><B>中介变量 2</B></FONT></TD></TR>
+        </TABLE>
+    >];
+
+    // --- Dependent variable (right) ---
+    dv [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8"
+               BGCOLOR="black">
+            <TR><TD ALIGN="CENTER"><FONT COLOR="white" POINT-SIZE="11"><B>因变量</B></FONT></TD></TR>
+        </TABLE>
+    >];
+
+    // --- Legend ---
+    legend [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6">
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9">"+" 表示正相关关系</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="9">"−" 表示负相关关系</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    // --- Caption ---
+    caption [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2" CELLPADDING="4">
+            <TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="11">图 X-Y    因果模型图标题</FONT></B></TD></TR>
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">Figure X-Y  Causal Model Title</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    // --- Edges with correlation labels ---
+    v1 -> m1 [label=<<FONT POINT-SIZE="9">+</FONT>>];
+    v2 -> m1 [label=<<FONT POINT-SIZE="9">+</FONT>>];
+    v3 -> m1 [label=<<FONT POINT-SIZE="9">−</FONT>>];
+    v4 -> m2 [label=<<FONT POINT-SIZE="9">+</FONT>>];
+
+    m1 -> dv [label=<<FONT POINT-SIZE="9">+</FONT>>];
+    m2 -> dv [label=<<FONT POINT-SIZE="9">−</FONT>>];
+
+    // --- Layout ---
+    { rank=same; v1; v2; v3; v4; }
+    { rank=same; m1; m2; }
+
+    // Position legend and caption
+    dv -> legend [style=invis];
+    legend -> caption [style=invis];
+}

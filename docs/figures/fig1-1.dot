@@ -1,0 +1,155 @@
+digraph G {
+    rankdir=TB;
+    dpi=300;
+    bgcolor="white";
+    fontname="Noto Sans CJK SC";
+    nodesep=0.6;
+    ranksep=0.35;
+    
+    node [fontname="Noto Sans CJK SC", shape=none, margin="0"];
+    edge [color="black", penwidth=1.8, arrowsize=1.0];
+
+    r1 [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+            <TR><TD BORDER="1" BGCOLOR="black" CELLPADDING="8" WIDTH="280" ALIGN="CENTER">
+                <FONT COLOR="white" POINT-SIZE="13"><B>绪    论</B></FONT>
+            </TD></TR>
+            <TR><TD CELLPADDING="4"></TD></TR>
+            <TR><TD>
+                <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="6" CELLPADDING="6">
+                    <TR>
+                        <TD WIDTH="130" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">研究背景与</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">研究意义</FONT></TD></TR></TABLE></TD>
+                        <TD WIDTH="130" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">研究内容</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">与结构</FONT></TD></TR></TABLE></TD>
+                        <TD WIDTH="130" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">研究方法</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">与创新点</FONT></TD></TR></TABLE></TD>
+                    </TR>
+                </TABLE>
+            </TD></TR>
+        </TABLE>
+    >];
+
+    r2 [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+            <TR><TD BORDER="1" BGCOLOR="black" CELLPADDING="8" WIDTH="280" ALIGN="CENTER">
+                <FONT COLOR="white" POINT-SIZE="13"><B>理论基础与文献综述</B></FONT>
+            </TD></TR>
+            <TR><TD CELLPADDING="4"></TD></TR>
+            <TR><TD>
+                <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="6" CELLPADDING="6">
+                    <TR>
+                        <TD WIDTH="130" ALIGN="CENTER"><FONT POINT-SIZE="10">SFE 管理理论</FONT></TD>
+                        <TD WIDTH="130" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">辖区划分算法</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">研究演进</FONT></TD></TR></TABLE></TD>
+                        <TD WIDTH="130" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">研究缺口与</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">切入点</FONT></TD></TR></TABLE></TD>
+                    </TR>
+                </TABLE>
+            </TD></TR>
+        </TABLE>
+    >];
+
+    r3 [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+            <TR><TD BORDER="1" BGCOLOR="black" CELLPADDING="8" WIDTH="280" ALIGN="CENTER">
+                <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT COLOR="white" POINT-SIZE="13"><B>制药企业 SFE 辖区管理</B></FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT COLOR="white" POINT-SIZE="13"><B>现状与痛点诊断</B></FONT></TD></TR></TABLE>
+            </TD></TR>
+            <TR><TD CELLPADDING="4"></TD></TR>
+            <TR><TD>
+                <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="6" CELLPADDING="6">
+                    <TR>
+                        <TD WIDTH="130" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">宏观政策</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">环境分析</FONT></TD></TR></TABLE></TD>
+                        <TD WIDTH="130" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">现行辖区</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">管理模式</FONT></TD></TR></TABLE></TD>
+                        <TD WIDTH="130" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">核心痛点</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">与成因</FONT></TD></TR></TABLE></TD>
+                    </TR>
+                </TABLE>
+            </TD></TR>
+        </TABLE>
+    >];
+
+    r4 [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+            <TR><TD BORDER="1" BGCOLOR="black" CELLPADDING="8" WIDTH="360" ALIGN="CENTER">
+                <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT COLOR="white" POINT-SIZE="13"><B>基于综合价值指数的</B></FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT COLOR="white" POINT-SIZE="13"><B>智能辖区分配模型构建</B></FONT></TD></TR></TABLE>
+            </TD></TR>
+            <TR><TD CELLPADDING="4"></TD></TR>
+            <TR><TD>
+                <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="6" CELLPADDING="6">
+                    <TR>
+                        <TD WIDTH="130" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">综合价值指数</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">构建</FONT></TD></TR></TABLE></TD>
+                        <TD WIDTH="130" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">大医院虚拟</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">拆分预处理</FONT></TD></TR></TABLE></TD>
+                        <TD WIDTH="130" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">多目标优化</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">模型构建</FONT></TD></TR></TABLE></TD>
+                    </TR>
+                </TABLE>
+            </TD></TR>
+            <TR><TD CELLPADDING="4"></TD></TR>
+            <TR><TD>
+                <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="6" CELLPADDING="6">
+                    <TR>
+                        <TD WIDTH="200" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10"><B>第一阶段：均衡优化</B></FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">四层地理聚类 → 模拟退火</FONT></TD></TR></TABLE></TD>
+                        <TD WIDTH="200" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10"><B>第二阶段：历史匹配</B></FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">Hungarian 算法 → 辖区映射</FONT></TD></TR></TABLE></TD>
+                    </TR>
+                </TABLE>
+            </TD></TR>
+        </TABLE>
+    >];
+
+    r5 [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+            <TR><TD BORDER="1" BGCOLOR="black" CELLPADDING="8" WIDTH="280" ALIGN="CENTER">
+                <FONT COLOR="white" POINT-SIZE="13"><B>实证分析与多场景模拟验证</B></FONT>
+            </TD></TR>
+            <TR><TD CELLPADDING="4"></TD></TR>
+            <TR><TD>
+                <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="6" CELLPADDING="6">
+                    <TR>
+                        <TD WIDTH="130" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">As-Is vs To-Be</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">对比分析</FONT></TD></TR></TABLE></TD>
+                        <TD WIDTH="130" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">三场景</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">压力测试</FONT></TD></TR></TABLE></TD>
+                        <TD WIDTH="130" ALIGN="CENTER"><FONT POINT-SIZE="10">敏感性分析</FONT></TD>
+                    </TR>
+                </TABLE>
+            </TD></TR>
+        </TABLE>
+    >];
+
+    r6 [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+            <TR><TD BORDER="1" BGCOLOR="black" CELLPADDING="8" WIDTH="360" ALIGN="CENTER">
+                <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT COLOR="white" POINT-SIZE="13"><B>企业内部管理配套及</B></FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT COLOR="white" POINT-SIZE="13"><B>算法商业化前景评估</B></FONT></TD></TR></TABLE>
+            </TD></TR>
+            <TR><TD CELLPADDING="4"></TD></TR>
+            <TR><TD>
+                <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="6" CELLPADDING="6">
+                    <TR>
+                        <TD WIDTH="130" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">人机协同</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">决策机制</FONT></TD></TR></TABLE></TD>
+                        <TD WIDTH="130" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">变革管理</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">策略</FONT></TD></TR></TABLE></TD>
+                        <TD WIDTH="130" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">商业价值</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">评估</FONT></TD></TR></TABLE></TD>
+                    </TR>
+                </TABLE>
+            </TD></TR>
+        </TABLE>
+    >];
+
+    r7 [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+            <TR><TD BORDER="1" BGCOLOR="black" CELLPADDING="8" WIDTH="280" ALIGN="CENTER">
+                <FONT COLOR="white" POINT-SIZE="13"><B>结论与展望</B></FONT>
+            </TD></TR>
+            <TR><TD CELLPADDING="4"></TD></TR>
+            <TR><TD>
+                <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="6" CELLPADDING="6">
+                    <TR>
+                        <TD WIDTH="150" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">研究结论</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">与创新点</FONT></TD></TR></TABLE></TD>
+                        <TD WIDTH="150" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">不足与</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">未来展望</FONT></TD></TR></TABLE></TD>
+                    </TR>
+                </TABLE>
+            </TD></TR>
+        </TABLE>
+    >];
+
+    caption [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2" CELLPADDING="4">
+            <TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="11">图 1-1    论文结构图</FONT></B></TD></TR>
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">Figure 1-1  Structure of the Paper</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    r1 -> r2 -> r3 -> r4 -> r5 -> r6 -> r7;
+    r7 -> caption [style=invis];
+}

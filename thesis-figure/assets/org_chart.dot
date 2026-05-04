@@ -1,0 +1,94 @@
+// Template: Organization / Hierarchy Chart (组织结构图 / 树形分类图)
+// Usage: Company structure, classification hierarchy, system decomposition
+// Customize: Replace labels, add/remove nodes and edges
+
+digraph G {
+    rankdir=TB;
+    dpi=300;
+    bgcolor="white";
+    fontname="Noto Sans CJK SC";
+    nodesep=0.5;
+    ranksep=0.6;
+
+    node [fontname="Noto Sans CJK SC", shape=none, margin="0"];
+    edge [color="black", penwidth=1.5, arrowsize=0.8];
+
+    // --- Root node (black header) ---
+    root [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8"
+               BGCOLOR="black">
+            <TR><TD ALIGN="CENTER">
+                <FONT COLOR="white" POINT-SIZE="12"><B>顶层标题</B></FONT>
+            </TD></TR>
+        </TABLE>
+    >];
+
+    // --- Level 2 nodes ---
+    l2a [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6">
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">分支 A</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    l2b [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6">
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">分支 B</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    l2c [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6">
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">分支 C</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    // --- Level 3 nodes (leaves) ---
+    l3a1 [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="5">
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">子项 A1</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    l3a2 [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="5">
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">子项 A2</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    l3b1 [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="5">
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">子项 B1</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    l3b2 [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="5">
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">子项 B2</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    // --- Caption ---
+    caption [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2" CELLPADDING="4">
+            <TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="11">图 X-Y    组织结构图标题</FONT></B></TD></TR>
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">Figure X-Y  Organization Chart Title</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    // --- Edges ---
+    root -> l2a;
+    root -> l2b;
+    root -> l2c;
+    l2a -> l3a1;
+    l2a -> l3a2;
+    l2b -> l3b1;
+    l2b -> l3b2;
+
+    // Align level 2
+    { rank=same; l2a; l2b; l2c; }
+    // Align level 3
+    { rank=same; l3a1; l3a2; l3b1; l3b2; }
+
+    // Caption at bottom (invisible edge from a leaf)
+    l3b2 -> caption [style=invis];
+}

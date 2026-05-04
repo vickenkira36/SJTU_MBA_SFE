@@ -1,0 +1,88 @@
+// Template: Process Flowchart with Decision Nodes
+// Usage: Algorithm steps, data processing pipelines, decision trees
+// Customize: Replace labels, add/remove nodes, adjust branching
+
+digraph G {
+    rankdir=TB;
+    dpi=300;
+    bgcolor="white";
+    fontname="Noto Sans CJK SC";
+    nodesep=0.6;
+    ranksep=0.5;
+
+    node [fontname="Noto Sans CJK SC", shape=none, margin="0"];
+    edge [color="black", penwidth=1.8, arrowsize=1.0];
+
+    // --- Start node (rounded) ---
+    start [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8"
+               STYLE="rounded" BGCOLOR="black">
+            <TR><TD ALIGN="CENTER"><FONT COLOR="white" POINT-SIZE="11"><B>开始</B></FONT></TD></TR>
+        </TABLE>
+    >];
+
+    // --- Process step (white box, black border) ---
+    step1 [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8">
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">处理步骤一</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    // --- Multi-line process step ---
+    step2 [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8">
+            <TR><TD ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0">
+                <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">处理步骤二</FONT></TD></TR>
+                <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">（含详细说明）</FONT></TD></TR>
+            </TABLE></TD></TR>
+        </TABLE>
+    >];
+
+    // --- Decision node (gray background) ---
+    decision [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8"
+               BGCOLOR="#f0f0f0">
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">满足条件？</FONT></TD></TR>
+        </TABLE>
+    >, shape=diamond, style="filled", fillcolor="#f0f0f0",
+       width=2.0, height=1.0];
+
+    // --- Branch steps ---
+    branchA [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8">
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">分支 A 处理</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    branchB [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8">
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">分支 B 处理</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    // --- End node (rounded) ---
+    finish [label=<
+        <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8"
+               STYLE="rounded" BGCOLOR="black">
+            <TR><TD ALIGN="CENTER"><FONT COLOR="white" POINT-SIZE="11"><B>结束</B></FONT></TD></TR>
+        </TABLE>
+    >];
+
+    // --- Caption ---
+    caption [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2" CELLPADDING="4">
+            <TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="11">图 X-Y    流程图标题</FONT></B></TD></TR>
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">Figure X-Y  Flowchart Title</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    // --- Edges ---
+    start -> step1;
+    step1 -> step2;
+    step2 -> decision;
+    decision -> branchA [label=<<FONT POINT-SIZE="9">是</FONT>>];
+    decision -> branchB [label=<<FONT POINT-SIZE="9">否</FONT>>];
+    branchA -> finish;
+    branchB -> finish;
+    finish -> caption [style=invis];
+}

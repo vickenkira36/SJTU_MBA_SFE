@@ -1,0 +1,79 @@
+// Template: Waterfall / Vertical Structure Diagram
+// Usage: Chapter structure, layered pipelines, sequential processes
+// Customize: Replace node labels, add/remove nodes, adjust WIDTH values
+
+digraph G {
+    rankdir=TB;
+    dpi=300;
+    bgcolor="white";
+    fontname="Noto Sans CJK SC";
+    nodesep=0.6;
+    ranksep=0.35;
+
+    node [fontname="Noto Sans CJK SC", shape=none, margin="0"];
+    edge [color="black", penwidth=1.8, arrowsize=1.0];
+
+    // --- Node 1: Single-line header with 3 sub-boxes ---
+    n1 [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+            <TR><TD BORDER="1" BGCOLOR="black" CELLPADDING="8" WIDTH="280" ALIGN="CENTER">
+                <FONT COLOR="white" POINT-SIZE="13"><B>标题一</B></FONT>
+            </TD></TR>
+            <TR><TD CELLPADDING="4"></TD></TR>
+            <TR><TD>
+                <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="6" CELLPADDING="6">
+                    <TR>
+                        <TD WIDTH="130" ALIGN="CENTER"><FONT POINT-SIZE="10">子项 A</FONT></TD>
+                        <TD WIDTH="130" ALIGN="CENTER"><FONT POINT-SIZE="10">子项 B</FONT></TD>
+                        <TD WIDTH="130" ALIGN="CENTER"><FONT POINT-SIZE="10">子项 C</FONT></TD>
+                    </TR>
+                </TABLE>
+            </TD></TR>
+        </TABLE>
+    >];
+
+    // --- Node 2: Multi-line header (use nested table for centering) ---
+    n2 [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+            <TR><TD BORDER="1" BGCOLOR="black" CELLPADDING="8" WIDTH="280" ALIGN="CENTER">
+                <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0">
+                    <TR><TD ALIGN="CENTER"><FONT COLOR="white" POINT-SIZE="13"><B>标题二第一行</B></FONT></TD></TR>
+                    <TR><TD ALIGN="CENTER"><FONT COLOR="white" POINT-SIZE="13"><B>标题二第二行</B></FONT></TD></TR>
+                </TABLE>
+            </TD></TR>
+            <TR><TD CELLPADDING="4"></TD></TR>
+            <TR><TD>
+                <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="6" CELLPADDING="6">
+                    <TR>
+                        <!-- Multi-line sub-box: nested table for centering -->
+                        <TD WIDTH="130" ALIGN="CENTER"><TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0">
+                            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">子项 D</FONT></TD></TR>
+                            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">第二行</FONT></TD></TR>
+                        </TABLE></TD>
+                        <TD WIDTH="130" ALIGN="CENTER"><FONT POINT-SIZE="10">子项 E</FONT></TD>
+                    </TR>
+                </TABLE>
+            </TD></TR>
+        </TABLE>
+    >];
+
+    // --- Node 3: Header only (no sub-boxes) ---
+    n3 [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+            <TR><TD BORDER="1" BGCOLOR="black" CELLPADDING="8" WIDTH="280" ALIGN="CENTER">
+                <FONT COLOR="white" POINT-SIZE="13"><B>标题三</B></FONT>
+            </TD></TR>
+        </TABLE>
+    >];
+
+    // --- Caption (always last) ---
+    caption [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2" CELLPADDING="4">
+            <TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="11">图 X-Y    中文标题</FONT></B></TD></TR>
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">Figure X-Y  English Title</FONT></TD></TR>
+        </TABLE>
+    >];
+
+    n1 -> n2 -> n3;
+    n3 -> caption [style=invis];
+}
