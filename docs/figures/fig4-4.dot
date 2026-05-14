@@ -1,0 +1,62 @@
+digraph G {
+    rankdir=LR;
+    fontname="Noto Sans CJK JP";
+    node [fontname="Noto Sans CJK JP", fontsize=11, penwidth=1.5];
+    edge [fontname="Noto Sans CJK JP", fontsize=9];
+
+    // Anonymous clusters (Stage 1 output)
+    subgraph cluster_left {
+        label="第一阶段输出\n(匿名簇)";
+        labeljust=l;
+        fontname="Noto Sans CJK JP";
+        fontsize=12;
+        style="dashed";
+        color="#2980b9";
+        bgcolor="#eaf2f8";
+
+        c1 [label="簇 A\nIndex=102", shape=circle, style=filled, fillcolor="#3498db", fontcolor=white, width=1.0];
+        c2 [label="簇 B\nIndex=98", shape=circle, style=filled, fillcolor="#3498db", fontcolor=white, width=1.0];
+        c3 [label="簇 C\nIndex=105", shape=circle, style=filled, fillcolor="#3498db", fontcolor=white, width=1.0];
+        c4 [label="簇 D\nIndex=95", shape=circle, style=filled, fillcolor="#3498db", fontcolor=white, width=1.0];
+    }
+
+    // Weight matrix (middle)
+    wmatrix [label=<<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+        <TR><TD BGCOLOR="#f0f0f0"></TD><TD BGCOLOR="#fdedec">T-001</TD><TD BGCOLOR="#fdedec">T-002</TD><TD BGCOLOR="#fdedec">T-003</TD><TD BGCOLOR="#fdedec">T-004</TD></TR>
+        <TR><TD BGCOLOR="#eaf2f8">簇A</TD><TD BGCOLOR="#d5f5e3"><B>850</B></TD><TD>320</TD><TD>180</TD><TD>210</TD></TR>
+        <TR><TD BGCOLOR="#eaf2f8">簇B</TD><TD>290</TD><TD>410</TD><TD BGCOLOR="#d5f5e3"><B>780</B></TD><TD>350</TD></TR>
+        <TR><TD BGCOLOR="#eaf2f8">簇C</TD><TD>150</TD><TD BGCOLOR="#d5f5e3"><B>720</B></TD><TD>280</TD><TD>390</TD></TR>
+        <TR><TD BGCOLOR="#eaf2f8">簇D</TD><TD>380</TD><TD>260</TD><TD>310</TD><TD BGCOLOR="#d5f5e3"><B>690</B></TD></TR>
+    </TABLE>>, shape=plaintext];
+
+    // Historical territories (Stage 2 output)
+    subgraph cluster_right {
+        label="匹配结果\n(历史辖区ID)";
+        labeljust=l;
+        fontname="Noto Sans CJK JP";
+        fontsize=12;
+        style="dashed";
+        color="#e74c3c";
+        bgcolor="#fdedec";
+
+        t1 [label="T-001\n(张三)", shape=box, style="rounded,filled", fillcolor="#e74c3c", fontcolor=white, width=1.2];
+        t2 [label="T-002\n(李四)", shape=box, style="rounded,filled", fillcolor="#e74c3c", fontcolor=white, width=1.2];
+        t3 [label="T-003\n(王五)", shape=box, style="rounded,filled", fillcolor="#e74c3c", fontcolor=white, width=1.2];
+        t4 [label="T-004\n(赵六)", shape=box, style="rounded,filled", fillcolor="#e74c3c", fontcolor=white, width=1.2];
+    }
+
+    // Edges
+    c1 -> wmatrix [style=invis];
+    c2 -> wmatrix [style=invis];
+    c3 -> wmatrix [style=invis];
+    c4 -> wmatrix [style=invis];
+
+    wmatrix -> t1 [label="簇A→T-001\n(w=850)", color="#27ae60", penwidth=2];
+    wmatrix -> t2 [label="簇C→T-002\n(w=720)", color="#27ae60", penwidth=2];
+    wmatrix -> t3 [label="簇B→T-003\n(w=780)", color="#27ae60", penwidth=2];
+    wmatrix -> t4 [label="簇D→T-004\n(w=690)", color="#27ae60", penwidth=2];
+
+    // Label
+    label_algo [label="Hungarian算法\n(最大化总权重)", shape=plaintext, fontsize=10, fontname="Noto Sans CJK JP"];
+    wmatrix -> label_algo [style=dotted, arrowhead=none];
+}

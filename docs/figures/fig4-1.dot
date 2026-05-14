@@ -1,0 +1,57 @@
+digraph G {
+    rankdir=TB;
+    fontname="Noto Sans CJK JP";
+    ranksep=0.35;
+    nodesep=0.3;
+    node [fontname="Noto Sans CJK JP", fontsize=9, shape=box, style="rounded,filled", fillcolor="#f0f0f0", color="#2c3e50", penwidth=1.2, height=0.4, margin="0.08,0.04"];
+    edge [fontname="Noto Sans CJK JP", fontsize=8, color="#7f8c8d"];
+
+    // Input & Preprocessing - compact
+    input [label="原始数据输入\n(医院清单、历史分配、约束配置)", fillcolor="#dfe6e9"];
+    preprocess [label="预处理：大医院虚拟拆分 (Index > 理想值×1.5)", fillcolor="#dfe6e9"];
+    province [label="按省份分组（各省独立求解）", fillcolor="#dfe6e9"];
+
+    // Stage 1
+    subgraph cluster_stage1 {
+        label="第一阶段：均衡优化";
+        labeljust=l;
+        fontname="Noto Sans CJK JP";
+        fontsize=10;
+        style="dashed";
+        color="#2980b9";
+        bgcolor="#eaf2f8";
+        margin="8";
+
+        clustering [label="四层地理聚类\nL1大医院独占 → L2区县 → L3城市 → L4组合合并\n+ Maximin种子选择"];
+        sa [label="模拟退火优化 (300,000次迭代)\nMove 60% / Swap 40% | Metropolis准则", fillcolor="#d5e8d4"];
+        note1 [label="代价函数不含\n历史惩罚项", shape=note, fillcolor="#fdebd0", fontsize=8];
+    }
+
+    // Stage 2
+    subgraph cluster_stage2 {
+        label="第二阶段：历史匹配";
+        labeljust=l;
+        fontname="Noto Sans CJK JP";
+        fontsize=10;
+        style="dashed";
+        color="#e74c3c";
+        bgcolor="#fdedec";
+        margin="8";
+
+        weight [label="三层权重矩阵构建\n医院级(idx²/500) + 区县级(+100) + 城市级(+50)"];
+        hungarian [label="Hungarian算法 (Kuhn-Munkres)\n匿名簇 → 历史辖区ID 最优匹配", fillcolor="#f9e79f"];
+        note2 [label="历史分配数据\n(上期方案)", shape=note, fillcolor="#fdebd0", fontsize=8];
+    }
+
+    // Output
+    output [label="最终辖区分配方案\n(医院→辖区映射 + 评估指标)", fillcolor="#d5f5e3"];
+
+    // Edges
+    input -> preprocess -> province -> clustering -> sa;
+    sa -> weight [label="匿名簇(均衡最优)"];
+    weight -> hungarian -> output;
+
+    // Side notes
+    sa -> note1 [style=dotted, arrowhead=none];
+    note2 -> weight [style=dotted, arrowhead=normal, dir=forward];
+}
