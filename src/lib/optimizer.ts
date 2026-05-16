@@ -87,7 +87,7 @@ function buildEffectiveConstraints(constraints: Constraint[]): EffectiveConstrai
     maxDistanceKm: distC ? Number(distC.value) || 200 : 200,
     maxCities: cityC ? Number(cityC.value) || 3 : 3,
     maxHospitals: capC ? Number(capC.value) || 15 : 15,
-    iterations: 100000,
+    iterations: 500000,
     indexThreshold: indexC?.threshold ?? 200,
     distanceThreshold: distC?.threshold ?? 10,
     cityThreshold: cityC?.threshold ?? 1,
@@ -219,11 +219,14 @@ function calculateCost(
     const { idxSum, count, cities, districts, maxDist } = getGroupStats(group);
 
     // Index: penalize violation outside [indexMin, indexMax]
-    // penalty = (超出量 / threshold) × BASE_PENALTY
+    // penalty = (超出量 / threshold)² × BASE_PENALTY
+    // 二次惩罚：抑制 SA 把多个轻微越界换成 1 个严重越界的"集中越界"行为
     if (idxSum < ec.indexMin) {
-      totalCost += ((ec.indexMin - idxSum) / ec.indexThreshold) * BASE_PENALTY;
+      const ratio = (ec.indexMin - idxSum) / ec.indexThreshold;
+      totalCost += ratio * ratio * BASE_PENALTY;
     } else if (idxSum > ec.indexMax) {
-      totalCost += ((idxSum - ec.indexMax) / ec.indexThreshold) * BASE_PENALTY;
+      const ratio = (idxSum - ec.indexMax) / ec.indexThreshold;
+      totalCost += ratio * ratio * BASE_PENALTY;
     }
 
     // City limit (distance is handled by geographic clustering, not penalized here)
@@ -255,10 +258,12 @@ function calculateCost(
           if (d > maxDistToCentroid) maxDistToCentroid = d;
         }
         // Quadratic penalty on max distance: penalizes outliers heavily
-        // 100km → 100²/100 = 100 (negligible)
-        // 200km → 200²/100 = 400 (moderate)
-        // 500km → 500²/100 = 2500 (heavy, ~0.25 BASE_PENALTY)
-        totalCost += (maxDistToCentroid * maxDistToCentroid) / 100;
+        // 系数 3 加大软阈权重，抑制 SA 把医院推到远辖区换 cost 改善
+        // 100km → 30000 (= 3× BASE_PENALTY)
+        // 200km → 120000 (= 12× BASE_PENALTY)
+        // 500km → 750000 (= 75× BASE_PENALTY)
+        // 1000km → 3000000 (= 300× BASE_PENALTY)
+        totalCost += 3 * maxDistToCentroid * maxDistToCentroid;
       }
     }
 
@@ -319,6 +324,87 @@ function calculateCost(
 }
 
 // ============================================================
+// 3b. 城市亲和关系：历史上同一辖区内的城市互为亲和
+// ============================================================
+
+type CityAffinityMap = Map<string, Set<string>>;
+
+function buildCityAffinity(
+  hospitals: Hospital[],
+  historicalAssignments?: import('@/types').HistoricalAssignment[]
+): CityAffinityMap {
+  const affinity: CityAffinityMap = new Map();
+  if (!historicalAssignments || historicalAssignments.length === 0) return affinity;
+
+  // 按 trtyCode 分组，收集每个辖区包含的城市
+  const trtyToCities = new Map<string, Set<string>>();
+  const hospitalCityMap = new Map(hospitals.map(h => [h.inscode, h.city]));
+  for (const ha of historicalAssignments) {
+    const city = hospitalCityMap.get(ha.inscode);
+    if (!city) continue;
+    if (!trtyToCities.has(ha.trtyCode)) trtyToCities.set(ha.trtyCode, new Set());
+    trtyToCities.get(ha.trtyCode)!.add(city);
+  }
+
+  // 同一辖区内的城市互为亲和（不跨辖区传递）
+  for (const cities of trtyToCities.values()) {
+    if (cities.size <= 1) continue;
+    const cityArr = [...cities];
+    for (let i = 0; i < cityArr.length; i++) {
+      for (let j = i + 1; j < cityArr.length; j++) {
+        if (!affinity.has(cityArr[i])) affinity.set(cityArr[i], new Set());
+        if (!affinity.has(cityArr[j])) affinity.set(cityArr[j], new Set());
+        affinity.get(cityArr[i])!.add(cityArr[j]);
+        affinity.get(cityArr[j])!.add(cityArr[i]);
+      }
+    }
+  }
+  return affinity;
+}
+
+// ============================================================
+// 3c. 一对一城市：城市只属于 1 个辖区 且 该辖区只有 1 个城市
+// ============================================================
+
+function buildExclusiveCities(
+  hospitals: Hospital[],
+  historicalAssignments?: import('@/types').HistoricalAssignment[]
+): Set<string> {
+  const exclusive = new Set<string>();
+  if (!historicalAssignments || historicalAssignments.length === 0) return exclusive;
+
+  const hospitalCityMap = new Map(hospitals.map(h => [h.inscode, h.city]));
+
+  // 城市 → 出现过的辖区集合
+  const cityToTrtys = new Map<string, Set<string>>();
+  // 辖区 → 包含的城市集合
+  const trtyToCities = new Map<string, Set<string>>();
+
+  for (const ha of historicalAssignments) {
+    const city = hospitalCityMap.get(ha.inscode);
+    if (!city) continue;
+    if (!cityToTrtys.has(city)) cityToTrtys.set(city, new Set());
+    cityToTrtys.get(city)!.add(ha.trtyCode);
+    if (!trtyToCities.has(ha.trtyCode)) trtyToCities.set(ha.trtyCode, new Set());
+    trtyToCities.get(ha.trtyCode)!.add(city);
+  }
+
+  // 双向一对一：城市只属于 1 个辖区 且 该辖区也只包含 1 个城市
+  // 业务规则:这种城市的 rep 是"专属 rep",一对一城市簇必须独立成 territory,不接收外部医院
+  for (const [city, trtys] of cityToTrtys) {
+    if (trtys.size !== 1) continue;
+    const trtyCode = [...trtys][0];
+    const trtyCities = trtyToCities.get(trtyCode);
+    if (trtyCities && trtyCities.size === 1) {
+      exclusive.add(city);
+    }
+  }
+
+  console.log(`[exclusiveCities] 双向一对一城市: ${exclusive.size} 个 (${[...exclusive].join(', ')})`);
+  return exclusive;
+}
+
+// ============================================================
 // 4a. Four-layer clustering: big hospitals → districts → cities → combination
 // ============================================================
 
@@ -327,7 +413,11 @@ function fourLayerClustering(
   n: number,
   maxCities: number,
   indexTarget: number,
-  lockMap?: LockMap
+  lockMap?: LockMap,
+  cityAffinity?: CityAffinityMap,
+  maxDistanceKm: number = 200,
+  exclusiveCities?: Set<string>,
+  outClusterLayer?: number[]  // 输出参数:每个 cluster 的层级标记(0=L0 专属,后续 SA 不能写入)
 ): VirtualHospital[][] {
   if (hospitals.length <= n) {
     // Fewer hospitals than clusters: one per cluster
@@ -338,14 +428,42 @@ function fourLayerClustering(
 
   const indexMin = indexTarget * 0.8; // 800 by default
   const clusters: VirtualHospital[][] = [];
+  const clusterLayer: number[] = []; // 每个 cluster 来自哪一层（0-6）;0 = 一对一城市专属簇,后续阶段不可写入
   const assigned = new Set<number>(); // indices into hospitals[] that are already assigned
+
+  // --- Layer 0: 一对一城市强制独立成簇（最高优先级,优先占 slot）---
+  // 设计意图:一对一城市必须独立成 territory,后续阶段不能往这些簇里塞其他医院
+  // 标记 clusterLayer = 0,后面 1b/兜底/rebalance/L6 都会跳过 L0 簇
+  if (exclusiveCities && exclusiveCities.size > 0) {
+    const exclusiveCityHosps = new Map<string, number[]>();
+    for (let i = 0; i < hospitals.length; i++) {
+      const city = hospitals[i].city;
+      if (city && exclusiveCities.has(city)) {
+        if (!exclusiveCityHosps.has(city)) exclusiveCityHosps.set(city, []);
+        exclusiveCityHosps.get(city)!.push(i);
+      }
+    }
+    // 按 totalIndex 降序：高 index 的一对一城市先占 slot（slot 真不够时优先保护）
+    const sortedExcCities = [...exclusiveCityHosps.entries()].sort((a, b) => {
+      const aIdx = a[1].reduce((s, i) => s + hospitals[i].index, 0);
+      const bIdx = b[1].reduce((s, i) => s + hospitals[i].index, 0);
+      return bIdx - aIdx;
+    });
+    for (const [, indices] of sortedExcCities) {
+      if (clusters.length >= n) break;
+      const cluster: VirtualHospital[] = indices.map(i => hospitals[i]);
+      indices.forEach(i => assigned.add(i));
+      clusters.push(cluster);
+      clusterLayer.push(0);
+    }
+  }
 
   // --- Layer 1: Big hospitals and split portions ---
   // Phase 1a: VHs with index >= indexTarget get their own cluster
   for (let i = 0; i < hospitals.length; i++) {
     if (assigned.has(i)) continue;
     if (hospitals[i].index >= indexTarget && clusters.length < n) {
-      clusters.push([hospitals[i]]);
+      clusters.push([hospitals[i]]); clusterLayer.push(1);
       assigned.add(i);
     }
   }
@@ -359,15 +477,17 @@ function fourLayerClustering(
 
     // Try to create a new cluster if possible
     if (clusters.length < n) {
-      clusters.push([vh]);
+      clusters.push([vh]); clusterLayer.push(1);
       assigned.add(i);
       continue;
     }
 
     // Find cluster with lowest index that doesn't have this originalId
+    // 跳过 L0 一对一城市专属簇
     let bestCluster = -1;
     let bestIndex = Infinity;
     for (let ci = 0; ci < clusters.length; ci++) {
+      if (clusterLayer[ci] === 0) continue;
       if (clusters[ci].some(v => v.originalId === vh.originalId)) continue;
       const clusterIdx = clusters[ci].reduce((s, v) => s + v.index, 0);
       if (clusterIdx < bestIndex) {
@@ -415,7 +535,7 @@ function fourLayerClustering(
           assigned.add(idx);
         }
       }
-      if (cluster.length > 0) clusters.push(cluster);
+      if (cluster.length > 0) { clusters.push(cluster); clusterLayer.push(2); }
     } else {
       // Multiple clusters from one district: use Maximin to select seeds, then assign
       const available = d.indices.filter((idx) => !assigned.has(idx));
@@ -425,7 +545,6 @@ function fourLayerClustering(
 
       for (const idx of available) {
         if (seedAssigned.has(idx)) continue;
-        // Assign to nearest seed cluster
         let bestCluster = 0;
         let bestDist = Infinity;
         for (let ci = 0; ci < subClusters.length; ci++) {
@@ -438,7 +557,7 @@ function fourLayerClustering(
 
       for (const sc of subClusters) {
         if (clusters.length >= n) break;
-        clusters.push(sc);
+        clusters.push(sc); clusterLayer.push(2);
       }
       for (const idx of available) assigned.add(idx);
     }
@@ -456,16 +575,27 @@ function fourLayerClustering(
     c.totalIndex += hospitals[i].index;
   }
 
+  // 一对一城市不受 indexMin 限制，强制独立成簇，且优先占 slot
   const citiesByIndex = Array.from(cityMap.entries())
-    .filter(([, c]) => c.totalIndex >= indexMin)
-    .sort((a, b) => b[1].totalIndex - a[1].totalIndex);
+    .filter(([city, c]) => c.totalIndex >= indexMin || (exclusiveCities && exclusiveCities.has(city)))
+    .sort((a, b) => {
+      // 一对一城市优先
+      const aExcl = exclusiveCities && exclusiveCities.has(a[0]) ? 1 : 0;
+      const bExcl = exclusiveCities && exclusiveCities.has(b[0]) ? 1 : 0;
+      if (aExcl !== bExcl) return bExcl - aExcl;
+      return b[1].totalIndex - a[1].totalIndex;
+    });
 
-  for (const [, c] of citiesByIndex) {
+  for (const [cityName, c] of citiesByIndex) {
     if (clusters.length >= n) break;
-    const numClusters = Math.min(
+    let numClusters = Math.min(
       Math.round(c.totalIndex / indexTarget),
       n - clusters.length
     );
+    // 一对一城市至少独立成 1 个簇
+    if (numClusters <= 0 && exclusiveCities && exclusiveCities.has(cityName)) {
+      numClusters = 1;
+    }
     if (numClusters <= 0) continue;
 
     const available = c.indices.filter((idx) => !assigned.has(idx));
@@ -477,7 +607,7 @@ function fourLayerClustering(
         cluster.push(hospitals[idx]);
         assigned.add(idx);
       }
-      if (cluster.length > 0) clusters.push(cluster);
+      if (cluster.length > 0) { clusters.push(cluster); clusterLayer.push(3); }
     } else {
       const seeds = maximinSelect(hospitals, available, numClusters);
       const subClusters: VirtualHospital[][] = seeds.map((sIdx) => [hospitals[sIdx]]);
@@ -495,9 +625,29 @@ function fourLayerClustering(
         subClusters[bestCluster].push(hospitals[idx]);
       }
 
+      // 过小的 sub-cluster 归并到同城市最近的 sub-cluster
+      for (let si = subClusters.length - 1; si >= 0; si--) {
+        const scIdx = subClusters[si].reduce((s, h) => s + h.index, 0);
+        if (scIdx >= indexMin * 0.3 || subClusters.length <= 1) continue;
+        const scLat = subClusters[si].reduce((s, h) => s + h.latitude, 0) / subClusters[si].length;
+        const scLng = subClusters[si].reduce((s, h) => s + h.longitude, 0) / subClusters[si].length;
+        let bestSc = -1, bestD = Infinity;
+        for (let sj = 0; sj < subClusters.length; sj++) {
+          if (sj === si) continue;
+          const lat2 = subClusters[sj].reduce((s, h) => s + h.latitude, 0) / subClusters[sj].length;
+          const lng2 = subClusters[sj].reduce((s, h) => s + h.longitude, 0) / subClusters[sj].length;
+          const d = haversineKm(scLng, scLat, lng2, lat2);
+          if (d < bestD) { bestD = d; bestSc = sj; }
+        }
+        if (bestSc >= 0) {
+          subClusters[bestSc].push(...subClusters[si]);
+          subClusters.splice(si, 1);
+        }
+      }
+
       for (const sc of subClusters) {
         if (clusters.length >= n) break;
-        clusters.push(sc);
+        clusters.push(sc); clusterLayer.push(3);
       }
       for (const idx of available) assigned.add(idx);
     }
@@ -515,8 +665,8 @@ function fourLayerClustering(
   }
 
   if (remainingCities.size > 0 && clusters.length < n) {
-    // Calculate centroid for each remaining city group
-    const cityGroups = Array.from(remainingCities.entries()).map(([city, indices]) => {
+    // 构建城市组：每个城市一个组，含质心和 index
+    let cityGroups = Array.from(remainingCities.entries()).map(([city, indices]) => {
       const hosps = indices.map((i) => hospitals[i]);
       const lat = hosps.reduce((s, h) => s + h.latitude, 0) / hosps.length;
       const lng = hosps.reduce((s, h) => s + h.longitude, 0) / hosps.length;
@@ -524,34 +674,51 @@ function fourLayerClustering(
       return { city, indices, lat, lng, totalIndex };
     });
 
-    // Greedy merge: repeatedly merge the two nearest city groups until
-    // we have (n - clusters.length) groups or fewer
-    const slotsLeft = n - clusters.length;
+    // --- Layer 5: 亲和预合并 ---
+    // 直接亲和的城市对合并（每个城市只参与一次，不传递）
+    if (cityAffinity && cityAffinity.size > 0) {
+      const mergedCities = new Set<string>();
 
-    while (cityGroups.length > slotsLeft) {
-      // Find two nearest groups
-      let bestI = 0, bestJ = 1, bestDist = Infinity;
+      const affinityPairs: { i: number; j: number; dist: number }[] = [];
       for (let i = 0; i < cityGroups.length; i++) {
+        const partners = cityAffinity.get(cityGroups[i].city);
+        if (!partners) continue;
         for (let j = i + 1; j < cityGroups.length; j++) {
-          const d = haversineKm(cityGroups[i].lng, cityGroups[i].lat, cityGroups[j].lng, cityGroups[j].lat);
-          if (d < bestDist) { bestDist = d; bestI = i; bestJ = j; }
+          if (partners.has(cityGroups[j].city)) {
+            const d = haversineKm(cityGroups[i].lng, cityGroups[i].lat, cityGroups[j].lng, cityGroups[j].lat);
+            affinityPairs.push({ i, j, dist: d });
+          }
         }
       }
+      affinityPairs.sort((a, b) => a.dist - b.dist);
 
-      // Merge j into i
-      const merged = cityGroups[bestI];
-      const other = cityGroups[bestJ];
-      const totalIdx = merged.totalIndex + other.totalIndex;
-      const totalCount = merged.indices.length + other.indices.length;
-      merged.lat = (merged.lat * merged.indices.length + other.lat * other.indices.length) / totalCount;
-      merged.lng = (merged.lng * merged.indices.length + other.lng * other.indices.length) / totalCount;
-      merged.indices.push(...other.indices);
-      merged.totalIndex = totalIdx;
-      merged.city = merged.city + '+' + other.city;
-      cityGroups.splice(bestJ, 1);
+      const toMerge: [number, number][] = [];
+      for (const pair of affinityPairs) {
+        if (mergedCities.has(cityGroups[pair.i].city) || mergedCities.has(cityGroups[pair.j].city)) continue;
+        toMerge.push([pair.i, pair.j]);
+        mergedCities.add(cityGroups[pair.i].city);
+        mergedCities.add(cityGroups[pair.j].city);
+      }
+
+      const removeIndices = new Set<number>();
+      for (const [i, j] of toMerge) {
+        const merged = cityGroups[i];
+        const other = cityGroups[j];
+        const totalCount = merged.indices.length + other.indices.length;
+        merged.lat = (merged.lat * merged.indices.length + other.lat * other.indices.length) / totalCount;
+        merged.lng = (merged.lng * merged.indices.length + other.lng * other.indices.length) / totalCount;
+        merged.indices.push(...other.indices);
+        merged.totalIndex += other.totalIndex;
+        merged.city = merged.city + '+' + other.city;
+        removeIndices.add(j);
+      }
+      if (removeIndices.size > 0) {
+        cityGroups = cityGroups.filter((_, idx) => !removeIndices.has(idx));
+      }
     }
 
-    // Create clusters from merged groups
+    // 亲和合并后的城市组先占用 slot，生成 cluster
+    // 能独立成 cluster 的组（有 slot 时）直接生成
     for (const group of cityGroups) {
       if (clusters.length >= n) break;
       const cluster: VirtualHospital[] = [];
@@ -559,17 +726,75 @@ function fourLayerClustering(
         cluster.push(hospitals[idx]);
         assigned.add(idx);
       }
-      if (cluster.length > 0) clusters.push(cluster);
+      if (cluster.length > 0) { clusters.push(cluster); clusterLayer.push(5); }
+    }
+
+    // --- Layer 6: 落单城市归属 ---
+    // cluster 数量超过 n 时，多余的 cluster 按距离归属到最近的已有 cluster（受 maxCities 约束）
+    if (clusters.length > n) {
+      const clusterCentroids = clusters.map(cl => ({
+        lat: cl.reduce((s, h) => s + h.latitude, 0) / (cl.length || 1),
+        lng: cl.reduce((s, h) => s + h.longitude, 0) / (cl.length || 1),
+      }));
+      const clusterCitySets = clusters.map(cl =>
+        new Set(cl.map(h => h.city).filter(Boolean))
+      );
+
+      // 从最小 index 的 Layer 5 cluster 开始归属
+      while (clusters.length > n) {
+        let srcIdx = -1, srcIndex = Infinity;
+        for (let ci = 0; ci < clusters.length; ci++) {
+          if (clusterLayer[ci] < 5) continue;
+          const idx = clusters[ci].reduce((s, h) => s + h.index, 0);
+          if (idx < srcIndex) { srcIndex = idx; srcIdx = ci; }
+        }
+        if (srcIdx < 0) break;
+
+        const srcCentroid = clusterCentroids[srcIdx];
+        const srcCities = clusterCitySets[srcIdx];
+
+        // 在所有已有 cluster 中按距离找最近的（受 maxCities 约束）
+        // 跳过 L0 一对一城市专属簇,不能往里塞跨城市的医院
+        let bestTarget = -1, bestDist = Infinity;
+        for (let ci = 0; ci < clusters.length; ci++) {
+          if (ci === srcIdx) continue;
+          if (clusterLayer[ci] === 0) continue;
+          if (maxCities > 0) {
+            const mergedCities = new Set([...clusterCitySets[ci], ...srcCities]);
+            if (mergedCities.size > maxCities) continue;
+          }
+          const d = haversineKm(srcCentroid.lng, srcCentroid.lat, clusterCentroids[ci].lng, clusterCentroids[ci].lat);
+          if (d < bestDist) { bestDist = d; bestTarget = ci; }
+        }
+
+        if (bestTarget < 0) break;
+
+        // 执行归属
+        clusters[bestTarget].push(...clusters[srcIdx]);
+        const tLen = clusters[bestTarget].length;
+        clusterCentroids[bestTarget] = {
+          lat: clusters[bestTarget].reduce((s, h) => s + h.latitude, 0) / tLen,
+          lng: clusters[bestTarget].reduce((s, h) => s + h.longitude, 0) / tLen,
+        };
+        for (const c of srcCities) clusterCitySets[bestTarget].add(c);
+
+        clusters.splice(srcIdx, 1);
+        clusterLayer.splice(srcIdx, 1);
+        clusterCentroids.splice(srcIdx, 1);
+        clusterCitySets.splice(srcIdx, 1);
+      }
     }
   }
 
   // Any remaining unassigned hospitals: assign to nearest cluster
+  // 跳过 L0 一对一城市专属簇
   for (let i = 0; i < hospitals.length; i++) {
     if (assigned.has(i)) continue;
-    if (clusters.length === 0) { clusters.push([]); }
-    let bestCluster = 0;
+    if (clusters.length === 0) { clusters.push([]); clusterLayer.push(99); }
+    let bestCluster = -1;
     let bestDist = Infinity;
     for (let ci = 0; ci < clusters.length; ci++) {
+      if (clusterLayer[ci] === 0) continue;
       if (clusters[ci].length === 0) continue;
       const centroid = {
         lat: clusters[ci].reduce((s, h) => s + h.latitude, 0) / clusters[ci].length,
@@ -578,20 +803,29 @@ function fourLayerClustering(
       const d = haversineKm(hospitals[i].longitude, hospitals[i].latitude, centroid.lng, centroid.lat);
       if (d < bestDist) { bestDist = d; bestCluster = ci; }
     }
+    if (bestCluster < 0) {
+      // 兜底 fallback：所有非 L0 簇都为空,只能塞 L0(应该极少发生)
+      for (let ci = 0; ci < clusters.length; ci++) {
+        if (clusters[ci].length > 0) { bestCluster = ci; break; }
+      }
+      if (bestCluster < 0) bestCluster = 0;
+    }
     clusters[bestCluster].push(hospitals[i]);
     assigned.add(i);
   }
 
   // If we have fewer clusters than n, split the largest cluster
+  // 跳过 L0 一对一城市专属簇,不能拆分破坏专属
   while (clusters.length < n) {
     // Find cluster with highest total index
     let maxIdx = 0;
-    let maxCluster = 0;
+    let maxCluster = -1;
     for (let ci = 0; ci < clusters.length; ci++) {
+      if (clusterLayer[ci] === 0) continue;
       const idx = clusters[ci].reduce((s, h) => s + h.index, 0);
       if (idx > maxIdx && clusters[ci].length >= 2) { maxIdx = idx; maxCluster = ci; }
     }
-    if (clusters[maxCluster].length < 2) break;
+    if (maxCluster < 0 || clusters[maxCluster].length < 2) break;
 
     // Split using Maximin: pick 2 seeds, assign rest to nearest
     const clusterHosps = clusters[maxCluster];
@@ -610,86 +844,19 @@ function fourLayerClustering(
     clusters.push(b);
   }
 
-  // Handle locked hospitals: move them to their designated clusters
-  // For split hospitals, disperse portions across different allowed clusters
-  if (lockMap && lockMap.size > 0) {
-    // Collect all locked VHs grouped by inscode
-    const lockedByInscode = new Map<string, { vh: VirtualHospital; ci: number; hi: number }[]>();
-    for (let ci = 0; ci < clusters.length; ci++) {
-      for (let hi = 0; hi < clusters[ci].length; hi++) {
-        const vh = clusters[ci][hi];
-        const allowedSet = lockMap.get(vh.inscode);
-        if (allowedSet && allowedSet.size > 0) {
-          if (!lockedByInscode.has(vh.inscode)) lockedByInscode.set(vh.inscode, []);
-          lockedByInscode.get(vh.inscode)!.push({ vh, ci, hi });
-        }
-      }
-    }
-
-    for (const [inscode, entries] of lockedByInscode) {
-      const allowedSet = lockMap.get(inscode)!;
-      const allowedArr = Array.from(allowedSet).filter(idx => idx < clusters.length);
-      if (allowedArr.length === 0) continue;
-
-      const isSplit = entries.length > 1 && entries[0].vh.portion < 0.999;
-
-      if (isSplit) {
-        // Disperse split portions across different allowed clusters (round-robin)
-        // Sort allowed clusters by current index sum (ascending) to balance load
-        allowedArr.sort((a, b) => {
-          const idxA = clusters[a].reduce((s, h) => s + h.index, 0);
-          const idxB = clusters[b].reduce((s, h) => s + h.index, 0);
-          return idxA - idxB;
-        });
-
-        // Remove all portions from their current clusters first (reverse order to preserve indices)
-        const sortedEntries = [...entries].sort((a, b) => {
-          if (a.ci !== b.ci) return b.ci - a.ci;
-          return b.hi - a.hi;
-        });
-        const removedVHs: VirtualHospital[] = [];
-        for (const entry of sortedEntries) {
-          clusters[entry.ci].splice(entry.hi, 1);
-          removedVHs.push(entry.vh);
-        }
-
-        // Assign each portion to a different allowed cluster
-        for (let i = 0; i < removedVHs.length; i++) {
-          const targetCluster = allowedArr[i % allowedArr.length];
-          clusters[targetCluster].push(removedVHs[i]);
-        }
-      } else {
-        // Non-split: move to the allowed cluster with lowest index sum
-        const bestCluster = allowedArr.reduce((best, idx) => {
-          const idxSum = clusters[idx].reduce((s, h) => s + h.index, 0);
-          const bestSum = clusters[best].reduce((s, h) => s + h.index, 0);
-          return idxSum < bestSum ? idx : best;
-        }, allowedArr[0]);
-
-        for (const entry of entries) {
-          if (entry.ci !== bestCluster) {
-            // Find current position (may have shifted due to earlier removals)
-            const currentHi = clusters[entry.ci].indexOf(entry.vh);
-            if (currentHi >= 0) {
-              clusters[entry.ci].splice(currentHi, 1);
-              clusters[bestCluster].push(entry.vh);
-            }
-          }
-        }
-      }
-    }
-  }
-
   // Rebalance: ensure every cluster has at least one hospital.
   // Donate the nearest hospital from the largest neighboring cluster.
+  // 跳过 L0 簇:既不让 L0 簇捐医院（保护一对一城市专属）,也不修复空 L0 簇（不会发生）
   for (let ci = 0; ci < clusters.length; ci++) {
     if (clusters[ci].length > 0) continue;
+    if (clusterLayer[ci] === 0) continue;
 
     // Find the cluster with the most hospitals to donate from
     let donorIdx = -1;
     let donorSize = 0;
     for (let di = 0; di < clusters.length; di++) {
       if (di === ci || clusters[di].length <= 1) continue;
+      if (clusterLayer[di] === 0) continue;
       if (clusters[di].length > donorSize) {
         donorSize = clusters[di].length;
         donorIdx = di;
@@ -715,6 +882,32 @@ function fourLayerClustering(
     const donated = clusters[donorIdx].splice(bestHi, 1)[0];
     clusters[ci].push(donated);
   }
+
+  // 输出 clusterLayer 供调用者使用（runOptimization 用 L0 标记保护一对一城市专属簇）
+  if (outClusterLayer) {
+    outClusterLayer.length = 0;
+    for (const l of clusterLayer) outClusterLayer.push(l);
+  }
+
+  // 聚类结果日志
+  console.log(`\n[聚类结果] ${clusters.length} 个 cluster（目标 ${n}）`);
+  console.log(`${'#'.padEnd(4)} ${'层级'.padEnd(5)} ${'Index'.padStart(8)} ${'医院'.padStart(5)} ${'城市'.padStart(5)}  城市列表`);
+  console.log('-'.repeat(80));
+  for (let ci = 0; ci < clusters.length; ci++) {
+    const cl = clusters[ci];
+    const idx = cl.reduce((s, h) => s + h.index, 0);
+    const cities = [...new Set(cl.map(h => h.city).filter(Boolean))];
+    const layer = ci < clusterLayer.length ? clusterLayer[ci] : '?';
+    console.log(
+      `${String(ci + 1).padEnd(4)} L${String(layer).padEnd(4)} ${idx.toFixed(0).padStart(8)} ${String(cl.length).padStart(5)} ${String(cities.length).padStart(5)}  ${cities.join(', ')}`
+    );
+    // 详细医院列表
+    for (const h of cl) {
+      const p = h.portion < 0.999 ? ` p=${h.portion.toFixed(1)}` : '';
+      console.log(`       ${(h.insname || '').substring(0, 20).padEnd(22)} ${(h.city || '').padEnd(10)} idx=${h.index.toFixed(0)}${p}`);
+    }
+  }
+  console.log('');
 
   return clusters;
 }
@@ -1017,7 +1210,9 @@ function runOptimization(
   territoryCount: number,
   ec: EffectiveConstraints,
   historicalMap?: HistoricalMap,
-  lockMap?: LockMap
+  lockMap?: LockMap,
+  cityAffinity?: CityAffinityMap,
+  exclusiveCities?: Set<string>
 ): VirtualHospital[][] {
   // Single territory: assign all hospitals directly, no optimization needed
   if (territoryCount <= 1) {
@@ -1025,72 +1220,81 @@ function runOptimization(
   }
 
   // Phase 1: Four-layer clustering for initial assignment
-  const assignments = fourLayerClustering(virtualHospitals, territoryCount, ec.maxCities, ec.indexTarget, lockMap);
+  const clusterLayer: number[] = [];
+  const assignments = fourLayerClustering(virtualHospitals, territoryCount, ec.maxCities, ec.indexTarget, lockMap, cityAffinity, ec.maxDistanceKm, exclusiveCities, clusterLayer);
+
+  // L0 = 一对一城市专属簇,SA 中不能往里 move/swap 任何外部医院
+  const exclusiveClusterIdx = new Set<number>();
+  clusterLayer.forEach((l, i) => { if (l === 0) exclusiveClusterIdx.add(i); });
+  if (exclusiveClusterIdx.size > 0) {
+    console.log(`[SA诊断] L0 一对一城市专属簇: ${exclusiveClusterIdx.size} 个 (索引: ${[...exclusiveClusterIdx].join(',')})`);
+  }
 
   // Build adjacency map for SA: only allow moves between adjacent clusters
-  const adjacency = buildAdjacency(assignments);
+  let adjacency = buildAdjacency(assignments);
 
   let currentCost = calculateCost(assignments, ec, historicalMap, lockMap);
   const iterations = ec.iterations;
+  const initialCost = currentCost;
 
-  for (let step = 0; step < iterations; step++) {
+  // [DIAG] 锁定医院规模
+  if (lockMap) {
+    const totalVHs = virtualHospitals.length;
+    const lockedInscodes = lockMap.size;
+    const lockedVHs = virtualHospitals.filter(vh => lockMap.has(vh.inscode)).length;
+    console.log(`[SA诊断] lockMap: ${lockedInscodes} 个 inscode, 覆盖 ${lockedVHs}/${totalVHs} VHs (${(lockedVHs/totalVHs*100).toFixed(1)}%)`);
+  } else {
+    console.log(`[SA诊断] lockMap: 空`);
+  }
+
+  // ============================================================
+  // 探测阶段：自适应估计初始温度 T0
+  // 目标：T0 使初始接受率约 50%，公式 T0 = -median(positiveDelta) / ln(0.5)
+  // ============================================================
+  const PROBE_TARGET = 200;
+  const MAX_PROBE_TRIES = 2000;
+  const probeDeltas: number[] = [];
+
+  for (let p = 0; p < MAX_PROBE_TRIES && probeDeltas.length < PROBE_TARGET; p++) {
     const mode = Math.random();
-
-    // Pick a random territory, then pick a random adjacent territory
     const t1 = Math.floor(Math.random() * territoryCount);
     const neighbors = adjacency.get(t1);
     if (!neighbors || neighbors.size === 0) continue;
     const neighborArr = Array.from(neighbors);
     const t2 = neighborArr[Math.floor(Math.random() * neighborArr.length)];
 
-    if (mode < 0.6 && assignments[t1].length > 0) {
-      // Never empty a territory
-      if (assignments[t1].length <= 1) continue;
+    // L0 保护:不能 move/swap 进 L0 专属簇,源也不能是 L0
+    if (exclusiveClusterIdx.has(t1) || exclusiveClusterIdx.has(t2)) continue;
 
+    if (mode < 0.6 && assignments[t1].length > 1) {
       const hIdx = Math.floor(Math.random() * assignments[t1].length);
       const h = assignments[t1][hIdx];
-
-      // Skip locked hospitals — non-split locked hospitals cannot be moved;
-      // split locked hospitals can move within their allowed territory set
       if (lockMap && lockMap.has(h.inscode)) {
         const allowedSet = lockMap.get(h.inscode)!;
-        if (h.portion >= 0.999) continue; // non-split: fully locked
-        if (!allowedSet.has(t2)) continue; // split: target must be in allowed set
+        if (h.portion >= 0.999) continue;
+        if (!allowedSet.has(t2)) continue;
       }
-
-      // Skip if target territory already has another portion of the same hospital
       if (h.portion < 0.999 && assignments[t2].some(vh => vh.originalId === h.originalId)) continue;
-
-      // Skip if move would exceed city limit in target cluster
       if (h.city && ec.maxCities > 0) {
         const targetCities = new Set(assignments[t2].map(vh => vh.city).filter(Boolean));
         if (!targetCities.has(h.city) && targetCities.size >= ec.maxCities) continue;
       }
-
       assignments[t1].splice(hIdx, 1);
       assignments[t2].push(h);
-
       const newCost = calculateCost(assignments, ec, historicalMap, lockMap);
-      if (newCost < currentCost) {
-        currentCost = newCost;
-      } else {
-        assignments[t2].pop();
-        assignments[t1].splice(hIdx, 0, h);
-      }
+      probeDeltas.push(newCost - currentCost);
+      assignments[t2].pop();
+      assignments[t1].splice(hIdx, 0, h);
     } else if (mode >= 0.6 && assignments[t1].length > 0 && assignments[t2].length > 0) {
       const idx1 = Math.floor(Math.random() * assignments[t1].length);
       const idx2 = Math.floor(Math.random() * assignments[t2].length);
-
       const h1 = assignments[t1][idx1];
       const h2 = assignments[t2][idx2];
-
-      // Skip if either hospital is locked (non-split locked hospitals cannot swap;
-      // split locked hospitals can swap within their allowed territory set)
       if (lockMap) {
         if (lockMap.has(h1.inscode)) {
           const allowed1 = lockMap.get(h1.inscode)!;
-          if (h1.portion >= 0.999) continue; // non-split: fully locked
-          if (!allowed1.has(t2)) continue;    // split: target must be in allowed set
+          if (h1.portion >= 0.999) continue;
+          if (!allowed1.has(t2)) continue;
         }
         if (lockMap.has(h2.inscode)) {
           const allowed2 = lockMap.get(h2.inscode)!;
@@ -1098,14 +1302,9 @@ function runOptimization(
           if (!allowed2.has(t1)) continue;
         }
       }
-
-      // Skip if swap would cause split portions of the same hospital to cluster
       if (h1.portion < 0.999 && assignments[t2].some(vh => vh !== h2 && vh.originalId === h1.originalId)) continue;
       if (h2.portion < 0.999 && assignments[t1].some(vh => vh !== h1 && vh.originalId === h2.originalId)) continue;
-
-      // Skip if swap would exceed city limit in either cluster
       if (ec.maxCities > 0) {
-        // Check t2 after receiving h1 and losing h2
         if (h1.city && h1.city !== h2.city) {
           const t2Cities = new Set(assignments[t2].filter(vh => vh !== h2).map(vh => vh.city).filter(Boolean));
           if (!t2Cities.has(h1.city) && t2Cities.size >= ec.maxCities) continue;
@@ -1115,21 +1314,215 @@ function runOptimization(
           if (!t1Cities.has(h2.city) && t1Cities.size >= ec.maxCities) continue;
         }
       }
+      assignments[t1][idx1] = h2;
+      assignments[t2][idx2] = h1;
+      const newCost = calculateCost(assignments, ec, historicalMap, lockMap);
+      probeDeltas.push(newCost - currentCost);
+      assignments[t1][idx1] = h1;
+      assignments[t2][idx2] = h2;
+    }
+  }
+
+  const positiveDeltas = probeDeltas.filter(d => d > 0).sort((a, b) => a - b);
+  const T0 = positiveDeltas.length > 0
+    ? -positiveDeltas[Math.floor(positiveDeltas.length / 2)] / Math.log(0.5)
+    : Math.max(1, Math.abs(probeDeltas[0] || 1));
+  const Tmin = T0 * 1e-4;
+  const alpha = Math.pow(Tmin / T0, 1 / iterations);
+  console.log(`[SA] 探测 ${probeDeltas.length} 次（正delta ${positiveDeltas.length}）→ T₀=${T0.toFixed(2)}, Tmin=${Tmin.toFixed(4)}, α=${alpha.toFixed(8)}`);
+
+  // ============================================================
+  // 阶段划分：前 80% 跑 SA，后 20% 从 best 起跑做贪心抛光
+  // ============================================================
+  const saIterations = Math.floor(iterations * 0.8);
+
+  // 维护全局最优解
+  let bestAssignments: VirtualHospital[][] = assignments.map(c => c.slice());
+  let bestCost = currentCost;
+
+  // ============================================================
+  // [DIAG] 分桶统计（每 50k 一桶）
+  // ============================================================
+  const BUCKET = 50000;
+  const numBuckets = Math.ceil(iterations / BUCKET);
+  const diag = {
+    attempted: new Array(numBuckets).fill(0),
+    acceptedImprove: new Array(numBuckets).fill(0), // delta < 0 接受
+    acceptedWorse: new Array(numBuckets).fill(0),   // delta >= 0 概率接受
+    rejected: new Array(numBuckets).fill(0),
+    costAtBucket: new Array(numBuckets).fill(0),
+    bestAtBucket: new Array(numBuckets).fill(0),
+    tempAtBucket: new Array(numBuckets).fill(0),
+    skipNoNeighbor: 0,
+    skipL0Cluster: 0,
+    skipMoveSourceTooSmall: 0,
+    skipMoveLocked: 0,
+    skipMoveSplitDuplicate: 0,
+    skipMoveCityLimit: 0,
+    skipSwapEmpty: 0,
+    skipSwapLocked: 0,
+    skipSwapSplitDuplicate: 0,
+    skipSwapCityLimit: 0,
+  };
+
+  // ============================================================
+  // 主循环：前 saIterations 步 Metropolis + 指数冷却，后续切贪心抛光
+  // ============================================================
+  for (let step = 0; step < iterations; step++) {
+    const bucket = Math.min(Math.floor(step / BUCKET), numBuckets - 1);
+    const inSAPhase = step < saIterations;
+    const T = inSAPhase ? T0 * Math.pow(alpha, step) : 0;
+
+    // 进入贪心抛光阶段：从 bestAssignments 起跑，重建邻接图
+    if (step === saIterations) {
+      assignments.length = 0;
+      for (const c of bestAssignments) assignments.push(c.slice());
+      currentCost = bestCost;
+      adjacency = buildAdjacency(assignments);
+      console.log(`[SA] step=${step}: 进入贪心抛光阶段，从 best=${bestCost.toFixed(0)} 起跑`);
+    }
+
+    // 每 50k 步重建邻接图（贪心阶段也照常），并记录上一桶末 cost / best / T
+    if (step > 0 && step % BUCKET === 0 && step !== saIterations) {
+      adjacency = buildAdjacency(assignments);
+      diag.costAtBucket[bucket - 1] = currentCost;
+      diag.bestAtBucket[bucket - 1] = bestCost;
+      diag.tempAtBucket[bucket - 1] = T;
+    } else if (step > 0 && step % BUCKET === 0) {
+      diag.costAtBucket[bucket - 1] = currentCost;
+      diag.bestAtBucket[bucket - 1] = bestCost;
+      diag.tempAtBucket[bucket - 1] = T;
+    }
+
+    const mode = Math.random();
+    const t1 = Math.floor(Math.random() * territoryCount);
+    const neighbors = adjacency.get(t1);
+    if (!neighbors || neighbors.size === 0) { diag.skipNoNeighbor++; continue; }
+    const neighborArr = Array.from(neighbors);
+    const t2 = neighborArr[Math.floor(Math.random() * neighborArr.length)];
+
+    // L0 保护:t1 或 t2 是一对一城市专属簇,跳过(不可写入,不可移出)
+    if (exclusiveClusterIdx.has(t1) || exclusiveClusterIdx.has(t2)) { diag.skipL0Cluster++; continue; }
+
+    if (mode < 0.6 && assignments[t1].length > 0) {
+      if (assignments[t1].length <= 1) { diag.skipMoveSourceTooSmall++; continue; }
+
+      const hIdx = Math.floor(Math.random() * assignments[t1].length);
+      const h = assignments[t1][hIdx];
+
+      if (lockMap && lockMap.has(h.inscode)) {
+        const allowedSet = lockMap.get(h.inscode)!;
+        if (h.portion >= 0.999) { diag.skipMoveLocked++; continue; }
+        if (!allowedSet.has(t2)) { diag.skipMoveLocked++; continue; }
+      }
+      if (h.portion < 0.999 && assignments[t2].some(vh => vh.originalId === h.originalId)) { diag.skipMoveSplitDuplicate++; continue; }
+      if (h.city && ec.maxCities > 0) {
+        const targetCities = new Set(assignments[t2].map(vh => vh.city).filter(Boolean));
+        if (!targetCities.has(h.city) && targetCities.size >= ec.maxCities) { diag.skipMoveCityLimit++; continue; }
+      }
+
+      assignments[t1].splice(hIdx, 1);
+      assignments[t2].push(h);
+
+      diag.attempted[bucket]++;
+      const newCost = calculateCost(assignments, ec, historicalMap, lockMap);
+      const delta = newCost - currentCost;
+      const accept = delta < 0 || (inSAPhase && Math.random() < Math.exp(-delta / T));
+      if (accept) {
+        currentCost = newCost;
+        if (delta < 0) diag.acceptedImprove[bucket]++;
+        else diag.acceptedWorse[bucket]++;
+        if (currentCost < bestCost) {
+          bestCost = currentCost;
+          bestAssignments = assignments.map(c => c.slice());
+        }
+      } else {
+        assignments[t2].pop();
+        assignments[t1].splice(hIdx, 0, h);
+        diag.rejected[bucket]++;
+      }
+    } else if (mode >= 0.6 && assignments[t1].length > 0 && assignments[t2].length > 0) {
+      const idx1 = Math.floor(Math.random() * assignments[t1].length);
+      const idx2 = Math.floor(Math.random() * assignments[t2].length);
+
+      const h1 = assignments[t1][idx1];
+      const h2 = assignments[t2][idx2];
+
+      if (lockMap) {
+        if (lockMap.has(h1.inscode)) {
+          const allowed1 = lockMap.get(h1.inscode)!;
+          if (h1.portion >= 0.999) { diag.skipSwapLocked++; continue; }
+          if (!allowed1.has(t2)) { diag.skipSwapLocked++; continue; }
+        }
+        if (lockMap.has(h2.inscode)) {
+          const allowed2 = lockMap.get(h2.inscode)!;
+          if (h2.portion >= 0.999) { diag.skipSwapLocked++; continue; }
+          if (!allowed2.has(t1)) { diag.skipSwapLocked++; continue; }
+        }
+      }
+
+      if (h1.portion < 0.999 && assignments[t2].some(vh => vh !== h2 && vh.originalId === h1.originalId)) { diag.skipSwapSplitDuplicate++; continue; }
+      if (h2.portion < 0.999 && assignments[t1].some(vh => vh !== h1 && vh.originalId === h2.originalId)) { diag.skipSwapSplitDuplicate++; continue; }
+
+      if (ec.maxCities > 0) {
+        if (h1.city && h1.city !== h2.city) {
+          const t2Cities = new Set(assignments[t2].filter(vh => vh !== h2).map(vh => vh.city).filter(Boolean));
+          if (!t2Cities.has(h1.city) && t2Cities.size >= ec.maxCities) { diag.skipSwapCityLimit++; continue; }
+        }
+        if (h2.city && h2.city !== h1.city) {
+          const t1Cities = new Set(assignments[t1].filter(vh => vh !== h1).map(vh => vh.city).filter(Boolean));
+          if (!t1Cities.has(h2.city) && t1Cities.size >= ec.maxCities) { diag.skipSwapCityLimit++; continue; }
+        }
+      }
 
       assignments[t1][idx1] = h2;
       assignments[t2][idx2] = h1;
 
+      diag.attempted[bucket]++;
       const newCost = calculateCost(assignments, ec, historicalMap, lockMap);
-      if (newCost < currentCost) {
+      const delta = newCost - currentCost;
+      const accept = delta < 0 || (inSAPhase && Math.random() < Math.exp(-delta / T));
+      if (accept) {
         currentCost = newCost;
+        if (delta < 0) diag.acceptedImprove[bucket]++;
+        else diag.acceptedWorse[bucket]++;
+        if (currentCost < bestCost) {
+          bestCost = currentCost;
+          bestAssignments = assignments.map(c => c.slice());
+        }
       } else {
         assignments[t1][idx1] = h1;
         assignments[t2][idx2] = h2;
+        diag.rejected[bucket]++;
       }
     }
   }
+  diag.costAtBucket[numBuckets - 1] = currentCost;
+  diag.bestAtBucket[numBuckets - 1] = bestCost;
+  diag.tempAtBucket[numBuckets - 1] = T0 * Math.pow(alpha, iterations);
 
-  return assignments;
+  // [DIAG] 输出诊断报告
+  const totalAttempted = diag.attempted.reduce((a, b) => a + b, 0);
+  const totalAcceptedImprove = diag.acceptedImprove.reduce((a, b) => a + b, 0);
+  const totalAcceptedWorse = diag.acceptedWorse.reduce((a, b) => a + b, 0);
+  const totalAccepted = totalAcceptedImprove + totalAcceptedWorse;
+  const totalSkipped =
+    diag.skipNoNeighbor + diag.skipL0Cluster + diag.skipMoveSourceTooSmall + diag.skipMoveLocked +
+    diag.skipMoveSplitDuplicate + diag.skipMoveCityLimit +
+    diag.skipSwapEmpty + diag.skipSwapLocked + diag.skipSwapSplitDuplicate + diag.skipSwapCityLimit;
+  console.log(`\n[SA诊断] iter=${iterations}, attempted=${totalAttempted}, accepted=${totalAccepted} (改善${totalAcceptedImprove}+劣解${totalAcceptedWorse}, ${(totalAccepted/Math.max(totalAttempted,1)*100).toFixed(2)}%), skipped=${totalSkipped} (${(totalSkipped/iterations*100).toFixed(1)}% of total)`);
+  console.log(`[SA诊断] cost: 初始=${initialCost.toFixed(0)}, 最终current=${currentCost.toFixed(0)}, 最终best=${bestCost.toFixed(0)} (best Δ=${(initialCost-bestCost).toFixed(0)}, ${((initialCost-bestCost)/Math.max(initialCost,1)*100).toFixed(2)}%)`);
+  console.log(`[SA诊断] 跳过分布: noNeighbor=${diag.skipNoNeighbor}, L0=${diag.skipL0Cluster}, moveTooSmall=${diag.skipMoveSourceTooSmall}, moveLocked=${diag.skipMoveLocked}, moveSplitDup=${diag.skipMoveSplitDuplicate}, moveCity=${diag.skipMoveCityLimit}, swapLocked=${diag.skipSwapLocked}, swapSplitDup=${diag.skipSwapSplitDuplicate}, swapCity=${diag.skipSwapCityLimit}`);
+  console.log(`[SA诊断] 分桶（每${BUCKET}步）  尝试  改善  劣接   接受率  桶末T  桶末current  桶末best`);
+  for (let b = 0; b < numBuckets; b++) {
+    const att = diag.attempted[b];
+    const ai = diag.acceptedImprove[b];
+    const aw = diag.acceptedWorse[b];
+    const rate = att > 0 ? ((ai+aw)/att*100).toFixed(2) : '0.00';
+    console.log(`            桶${String(b+1).padStart(2)}: ${String(att).padStart(7)} ${String(ai).padStart(5)} ${String(aw).padStart(5)} ${rate.padStart(6)}%  ${diag.tempAtBucket[b].toFixed(2).padStart(8)} ${diag.costAtBucket[b].toFixed(0).padStart(11)} ${diag.bestAtBucket[b].toFixed(0).padStart(10)}`);
+  }
+
+  return bestAssignments;
 }
 
 // ============================================================
@@ -1567,12 +1960,31 @@ function optimizeSingleGroup(
       lockMap = buildLockMap(lockAssignments, territories);
     }
 
+    // 构建城市亲和关系和一对一城市锁定
+    const cityAffinityMap = buildCityAffinity(hospitals, historicalAssignments);
+    const exclusiveCitiesSet = buildExclusiveCities(hospitals, historicalAssignments);
+
+    // 一对一城市通过 lockMap 锁定到历史辖区
+    if (exclusiveCitiesSet.size > 0 && historicalAssignments && historicalAssignments.length > 0) {
+      if (!lockMap) lockMap = new Map();
+      const trtyToIdx = new Map(territories.map((t, i) => [t.trtyCode, i]));
+      const hospitalCityMap = new Map(hospitals.map(h => [h.inscode, h.city]));
+      for (const ha of historicalAssignments) {
+        const city = hospitalCityMap.get(ha.inscode);
+        if (!city || !exclusiveCitiesSet.has(city)) continue;
+        const tIdx = trtyToIdx.get(ha.trtyCode);
+        if (tIdx === undefined) continue;
+        if (!lockMap.has(ha.inscode)) lockMap.set(ha.inscode, new Set());
+        lockMap.get(ha.inscode)!.add(tIdx);
+      }
+    }
+
     // option2: disable historical penalty so SA optimizes purely for balance
     const saEc = mode === 'option2' ? { ...ec, hasHistorical: false, historicalThreshold: 0 } : ec;
-    let assignments = runOptimization(virtualHospitals, territories.length, saEc, historicalMap, lockMap);
+    let assignments = runOptimization(virtualHospitals, territories.length, saEc, historicalMap, lockMap, cityAffinityMap, exclusiveCitiesSet);
 
-    // option2 phase 2: match clusters to historical territory IDs
-    if (mode === 'option2' && historicalAssignments && historicalAssignments.length > 0) {
+    // 所有模式都需要 Hungarian 匹配：cluster→territory 映射
+    if (historicalAssignments && historicalAssignments.length > 0) {
       const provInscodes = new Set(hospitals.map((h) => h.inscode));
       const provHistorical = historicalAssignments.filter((ha) => provInscodes.has(ha.inscode));
       if (provHistorical.length > 0) {
@@ -1668,12 +2080,34 @@ function optimizeSingleGroup(
     }
 
     const virtualHospitals = preprocessHospitals(provHospitals, ec.indexTarget);
+
+    // 构建省级城市亲和关系和一对一城市锁定
+    const provInscodes2 = new Set(provHospitals.map((h) => h.inscode));
+    const provHistForAffinity = historicalAssignments?.filter((ha) => provInscodes2.has(ha.inscode));
+    const provCityAffinity = buildCityAffinity(provHospitals, provHistForAffinity);
+    const provExclusiveCities = buildExclusiveCities(provHospitals, provHistForAffinity);
+
+    // 一对一城市通过 lockMap 锁定到历史辖区
+    if (provExclusiveCities.size > 0 && provHistForAffinity && provHistForAffinity.length > 0) {
+      if (!provLockMap) provLockMap = new Map();
+      const trtyToIdx = new Map(provTerritories.map((t, i) => [t.trtyCode, i]));
+      const hospitalCityMap = new Map(provHospitals.map(h => [h.inscode, h.city]));
+      for (const ha of provHistForAffinity) {
+        const city = hospitalCityMap.get(ha.inscode);
+        if (!city || !provExclusiveCities.has(city)) continue;
+        const tIdx = trtyToIdx.get(ha.trtyCode);
+        if (tIdx === undefined) continue;
+        if (!provLockMap.has(ha.inscode)) provLockMap.set(ha.inscode, new Set());
+        provLockMap.get(ha.inscode)!.add(tIdx);
+      }
+    }
+
     // option2: disable historical penalty so SA optimizes purely for balance
     const saEc = mode === 'option2' ? { ...ec, hasHistorical: false, historicalThreshold: 0 } : ec;
-    let assignments = runOptimization(virtualHospitals, provTerritories.length, saEc, provHistMap, provLockMap);
+    let assignments = runOptimization(virtualHospitals, provTerritories.length, saEc, provHistMap, provLockMap, provCityAffinity, provExclusiveCities);
 
-    // option2 phase 2: match clusters to historical territory IDs per province
-    if (mode === 'option2' && historicalAssignments && historicalAssignments.length > 0) {
+    // 所有模式都需要 Hungarian 匹配：cluster→territory 映射
+    if (historicalAssignments && historicalAssignments.length > 0) {
       const provInscodes = new Set(provHospitals.map((h) => h.inscode));
       const provHistorical = historicalAssignments.filter((ha) => provInscodes.has(ha.inscode));
       if (provHistorical.length > 0) {
@@ -1919,15 +2353,16 @@ function matchClustersToHistory(
       const key = vh.inscode.toUpperCase();
 
       for (let tIdx = 0; tIdx < n; tIdx++) {
-        // Hospital level: index² / 500 — large hospitals dominate
-        // For split hospitals with historical portions, weight by portion
+        // Hospital level: originalIndex² × histPortion / 500 — 大医院主导
+        // 用 originalIndex 而非 vh.index，避免拆分对单份权重的稀释:
+        //   不拆: vh.index = originalIndex,行为不变
+        //   拆 n 份: 每份贡献 = orig² × histPortion / 500,n 份合计 ≈ orig²/500 (恢复设计意图)
         if (histInscodes[tIdx].has(key)) {
-          // Skip excluded low-portion historical matches
           if (splitExclusions.has(`${key}|${tIdx}`)) continue;
 
           const histPortion = histPortions[tIdx].get(key);
           const portionWeight = histPortion !== undefined ? histPortion : 1;
-          weights[cIdx][tIdx] += (vh.index * vh.index * portionWeight) / 500;
+          weights[cIdx][tIdx] += (vh.originalIndex * vh.originalIndex * portionWeight) / 500;
         }
 
         // District level: +100 per hospital in a shared district
@@ -1959,6 +2394,53 @@ function matchClustersToHistory(
           break; // only need to check one locked VH per cluster
         }
       }
+    }
+  }
+
+  // [DIAG] 诊断含拆分医院的 cluster 权重，看医院级是否被拆分稀释
+  for (let cIdx = 0; cIdx < n; cIdx++) {
+    const splits = assignments[cIdx].filter(vh => vh.portion < 0.999);
+    if (splits.length === 0) continue;
+    const splitInfo = [...new Set(splits.map(vh => `${vh.insname.substring(0, 14)}(orig=${vh.originalIndex.toFixed(0)},vh.idx=${vh.index.toFixed(0)},p=${vh.portion.toFixed(2)})`))].join(' + ');
+    console.log(`\n[匹配诊断] cluster${cIdx} 含拆分: ${splitInfo}`);
+    // 列出 cluster 里所有医院 + 是否被 lockMap 锁定
+    if (lockMap) {
+      const lockedHere = assignments[cIdx].filter(vh => lockMap.has(vh.inscode));
+      if (lockedHere.length > 0) {
+        const lockInfo = lockedHere.map(vh => {
+          const allowed = [...lockMap.get(vh.inscode)!].map(idx => territories[idx]?.trtyCode || `T${idx}`).join('|');
+          return `${vh.insname.substring(0, 12)}→[${allowed}]`;
+        }).join(', ');
+        console.log(`  ⚠ cluster${cIdx} 含锁定医院: ${lockInfo}`);
+      }
+    }
+    console.log(`  ${'territory'.padEnd(14)} ${'医院级'.padStart(8)} ${'区县级'.padStart(6)} ${'城市级'.padStart(6)} ${'lock'.padStart(6)} ${'总权重'.padStart(10)}`);
+    const rows: { trty: string; hospW: number; distW: number; cityW: number; lockW: number; total: number }[] = [];
+    for (let tIdx = 0; tIdx < n; tIdx++) {
+      let hospW = 0, distW = 0, cityW = 0, lockW = 0;
+      for (const vh of assignments[cIdx]) {
+        const key = vh.inscode.toUpperCase();
+        if (histInscodes[tIdx].has(key) && !splitExclusions.has(`${key}|${tIdx}`)) {
+          const portionWeight = histPortions[tIdx].get(key) ?? 1;
+          hospW += (vh.originalIndex * vh.originalIndex * portionWeight) / 500;
+        }
+        if (vh.district && histDistricts[tIdx].has(vh.district)) distW += 100;
+        if (vh.city && histCities[tIdx].has(vh.city)) cityW += 50;
+      }
+      if (lockMap) {
+        for (const vh of assignments[cIdx]) {
+          const allowedSet = lockMap.get(vh.inscode);
+          if (allowedSet && allowedSet.has(tIdx)) { lockW = 1e12; break; }
+        }
+      }
+      const total = hospW + distW + cityW + lockW;
+      if (total > 0) {
+        rows.push({ trty: territories[tIdx]?.trtyCode || `T${tIdx}`, hospW, distW, cityW, lockW, total });
+      }
+    }
+    rows.sort((a, b) => b.total - a.total);
+    for (const r of rows.slice(0, 8)) {
+      console.log(`  ${r.trty.padEnd(14)} ${r.hospW.toFixed(0).padStart(8)} ${r.distW.toFixed(0).padStart(6)} ${r.cityW.toFixed(0).padStart(6)} ${(r.lockW > 0 ? '1e12' : '-').padStart(6)} ${r.total.toFixed(0).padStart(10)}`);
     }
   }
 

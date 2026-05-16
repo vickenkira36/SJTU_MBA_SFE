@@ -75,58 +75,22 @@ export async function parseConstraintWithLLM(
       };
     }
 
-    // Read SSE stream
-    const reader = res.body?.getReader();
-    if (!reader) {
-      return { constraint: null, response: '⚠️ 无响应体' };
+    const resData = await res.json();
+    if (resData.error) {
+      return { constraint: null, response: `⚠️ ${resData.error}` };
     }
 
-    const decoder = new TextDecoder();
-    let fullContent = '';
-    let lastResponse = '';
-    let buffer = '';
+    const fullContent = resData.content || '';
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed === 'data: [DONE]') continue;
-        if (trimmed.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(trimmed.slice(6));
-            if (data.error) {
-              return { constraint: null, response: `⚠️ ${data.error}` };
-            }
-            if (data.content) {
-              fullContent += data.content;
-
-              // Try to extract partial "response" field for streaming display
-              if (onChunk) {
-                const currentResponse = extractPartialResponse(fullContent);
-                if (currentResponse.length > lastResponse.length) {
-                  const newText = currentResponse.slice(lastResponse.length);
-                  onChunk(newText);
-                  lastResponse = currentResponse;
-                }
-              }
-            }
-          } catch {
-            // skip
-          }
-        }
-      }
+    // 流式回调：一次性输出完整 response
+    if (onChunk) {
+      const partialResponse = extractPartialResponse(fullContent);
+      if (partialResponse) onChunk(partialResponse);
     }
 
-    // Parse the complete JSON
+    // 解析完整 JSON
     let parsed;
     try {
-      // Strip markdown code fences if present
       let jsonStr = fullContent.trim();
       if (jsonStr.startsWith('```')) {
         jsonStr = jsonStr.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
@@ -135,7 +99,7 @@ export async function parseConstraintWithLLM(
     } catch {
       return {
         constraint: null,
-        response: lastResponse || '⚠️ LLM 返回了无效的 JSON，请重试。',
+        response: '⚠️ LLM 返回了无效的 JSON，请重试。',
       };
     }
 

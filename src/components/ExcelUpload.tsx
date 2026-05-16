@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { Upload, FileSpreadsheet, Check, AlertCircle, Trash2, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Hospital, Territory, HistoricalAssignment, LockAssignment } from '@/types';
-import { parseHospitals, parseHospitalBusiness, loadHcoMaster, joinWithMaster, parseTerritories, parseHistoricalAssignments, parseLockAssignments, validateHospitals, validateTerritories, validateCrossTable, ValidationResult, fillMissingDistricts } from '@/lib/excel-parser';
+import { parseHospitals, parseHospitalBusiness, loadHcoMaster, joinWithMaster, parseTerritories, parseHistoricalAssignments, parseLockAssignments, validateHospitals, validateTerritories, validateCrossTable, ValidationResult, fillMissingDistricts, HOSPITAL_FIELD_MAP, TERRITORY_FIELD_MAP, HISTORICAL_FIELD_MAP, LOCK_FIELD_MAP } from '@/lib/excel-parser';
 
 interface ExcelUploadProps {
   onDataLoaded: (hospitals: Hospital[], territories: Territory[], historicalAssignments?: HistoricalAssignment[], lockAssignments?: LockAssignment[]) => void;
@@ -11,6 +11,49 @@ interface ExcelUploadProps {
   initialTerritories?: Territory[];
   initialHistorical?: HistoricalAssignment[];
   initialLockAssignments?: LockAssignment[];
+}
+
+// 通用预览表格：根据原始列名和 field map 动态渲染
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function DataPreview({ title, columns, data, fieldMap, maxRows = 5 }: {
+  title: string;
+  columns: string[];
+  data: any[];
+  fieldMap: Record<string, string>;
+  maxRows?: number;
+}) {
+  if (data.length === 0 || columns.length === 0) return null;
+
+  return (
+    <div className="mb-6">
+      <h3 className="text-sm font-semibold text-gray-700 mb-2">{title}（前{Math.min(maxRows, data.length)}条）</h3>
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              {columns.map((col) => (
+                <th key={col} className="px-3 py-2 text-left text-gray-600 whitespace-nowrap">{col}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.slice(0, maxRows).map((row, i) => (
+              <tr key={i} className="border-t border-gray-100">
+                {columns.map((col) => {
+                  const key = fieldMap[col.trim()] || col.trim();
+                  const val = (row as Record<string, unknown>)[key];
+                  const display = val == null || val === '' ? '-' : String(val);
+                  return (
+                    <td key={col} className="px-3 py-2 text-gray-700 whitespace-nowrap">{display}</td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 export default function ExcelUpload({ onDataLoaded, initialHospitals, initialTerritories, initialHistorical, initialLockAssignments }: ExcelUploadProps) {
@@ -417,73 +460,10 @@ export default function ExcelUpload({ onDataLoaded, initialHospitals, initialTer
       </div>
 
       {/* Data Preview */}
-      {hospitals.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">医院数据预览（前5条）</h3>
-          <div className="overflow-x-auto rounded-lg border border-gray-200">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left text-gray-600">inscode</th>
-                  <th className="px-3 py-2 text-left text-gray-600">insname</th>
-                  <th className="px-3 py-2 text-left text-gray-600">产品组</th>
-                  <th className="px-3 py-2 text-left text-gray-600">城市</th>
-                  <th className="px-3 py-2 text-left text-gray-600">省份</th>
-                  <th className="px-3 py-2 text-right text-gray-600">销量</th>
-                  <th className="px-3 py-2 text-right text-gray-600">潜力</th>
-                  <th className="px-3 py-2 text-right text-gray-600">index</th>
-                </tr>
-              </thead>
-              <tbody>
-                {hospitals.slice(0, 5).map((h) => (
-                  <tr key={h.id} className="border-t border-gray-100">
-                    <td className="px-3 py-2 text-gray-800 font-mono text-xs font-medium">{h.inscode}</td>
-                    <td className="px-3 py-2 text-gray-800 font-medium">{h.insname}</td>
-                    <td className="px-3 py-2 text-gray-600">{h.productGroup || '-'}</td>
-                    <td className="px-3 py-2 text-gray-600">{h.city}</td>
-                    <td className="px-3 py-2 text-gray-600">{h.province}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{h.sales ? h.sales.toLocaleString() : '-'}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{h.potential ? h.potential.toLocaleString() : '-'}</td>
-                    <td className="px-3 py-2 text-right font-semibold text-blue-700">{h.index ? h.index.toFixed(2) : '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {territories.length > 0 && (
-        <div className="mb-8">
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">辖区数据预览（前10条）</h3>
-          <div className="overflow-x-auto rounded-lg border border-gray-200">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left text-gray-600">TRTY_CODE</th>
-                  <th className="px-3 py-2 text-left text-gray-600">Rep</th>
-                  <th className="px-3 py-2 text-left text-gray-600">省份</th>
-                  <th className="px-3 py-2 text-left text-gray-600">大区</th>
-                  <th className="px-3 py-2 text-left text-gray-600">LEL</th>
-                  <th className="px-3 py-2 text-left text-gray-600">产品组</th>
-                </tr>
-              </thead>
-              <tbody>
-                {territories.slice(0, 10).map((t) => (
-                  <tr key={t.id} className="border-t border-gray-100">
-                    <td className="px-3 py-2 text-gray-800 font-medium">{t.trtyCode}</td>
-                    <td className="px-3 py-2 text-gray-600">{t.rep || '-'}</td>
-                    <td className="px-3 py-2 text-gray-600">{t.province || '-'}</td>
-                    <td className="px-3 py-2 text-gray-600">{t.region || '-'}</td>
-                    <td className="px-3 py-2 text-gray-600">{t.lel || '-'}</td>
-                    <td className="px-3 py-2 text-gray-600">{t.productGroup || '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      <DataPreview title="医院数据预览" columns={hospitalColumns} data={hospitals} fieldMap={HOSPITAL_FIELD_MAP} maxRows={5} />
+      <DataPreview title="辖区数据预览" columns={territoryColumns} data={territories} fieldMap={TERRITORY_FIELD_MAP} maxRows={10} />
+      <DataPreview title="历史分配预览" columns={historicalColumns} data={historicalAssignments} fieldMap={HISTORICAL_FIELD_MAP} maxRows={10} />
+      <DataPreview title="锁定清单预览" columns={lockColumns} data={lockAssignments} fieldMap={LOCK_FIELD_MAP} maxRows={10} />
 
       {/* Validation Results */}
       {hasData && (validation.errors.length > 0 || validation.warnings.length > 0) && (

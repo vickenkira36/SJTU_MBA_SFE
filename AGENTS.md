@@ -16,18 +16,18 @@ git push
 - **仓库地址**：`https://github.com/cheny128_roche/sfe-territory-alignment`
 - **分支**：`master`
 - **访问凭证**：环境变量 `RocheKey`（GitHub PAT）
-- **论文锁定版本**：`061372fedc3ad6b55ba3769dcbfcba74c0a9ba17`（2026-05-10 快照）
+- **论文锁定版本**：`cbc1a756a7f2bac3cca3374a104e10945be41686`（2026-05-14 快照，v20260514-2352：真 SA + Cost 调整 + 双向一对一 + Hungarian 修复）
 - **克隆命令**（锁定到论文版本）：
   ```bash
   git clone "https://cheny128_roche:${RocheKey}@github.com/cheny128_roche/sfe-territory-alignment.git" /tmp/sfe-territory-alignment
-  cd /tmp/sfe-territory-alignment && git checkout 061372fedc3ad6b55ba3769dcbfcba74c0a9ba17
+  cd /tmp/sfe-territory-alignment && git checkout cbc1a756a7f2bac3cca3374a104e10945be41686
   ```
 - **本地缓存**：`/tmp/sfe-territory-alignment/`（克隆后可直接引用）
 - **优先级**：当该仓库代码与本地 `src/lib/optimizer.ts` 或 `docs/algorithm.md` 存在差异时，以该仓库代码为准
 
 ## Markdown 转 Word 标准命令
 
-每次生成 docx 时**必须**使用以下完整命令，不得省略任何参数：
+每次生成 docx 时**必须**先 pandoc 再 post-process，两步都不能省：
 
 ```bash
 pandoc docs/chapterXX.md -o docs/chapterXX.docx \
@@ -35,11 +35,24 @@ pandoc docs/chapterXX.md -o docs/chapterXX.docx \
   --lua-filter=docs/superscript-cite.lua \
   --resource-path=docs \
   -f markdown -t docx
+
+python3 docs/post_process_docx.py docs/chapterXX.docx
 ```
 
 - `--reference-doc`：安泰格式模板，定义所有样式
 - `--lua-filter`：引用上标处理（正文中 `[N]` → 上标，参考文献列表中保持原样）
 - `--resource-path=docs`：**必须**，否则 markdown 中的图片路径（如 `figures/fig1-1.png`）无法解析
+- `post_process_docx.py`：**必须**，对所有表格设置 AutoFit + cantSplit + tblHeader，否则会出现"窄列文字一字一断"和"单元格内容跨页拦腰切断"的渲染问题
+
+## 数学公式编号规则
+
+正文公式编号**禁止**使用 `\tag{X-Y}`——这是 amsmath 扩展，pandoc 转 docx 时不支持，会导致整个公式 fallback 成 LaTeX 源码裸文本。改用 `\qquad\text{(X-Y)}`：
+
+```markdown
+$$d(i,j) = 2R \cdot \arcsin\sqrt{...} \qquad\text{(4-1)}$$
+```
+
+`\qquad` 是大空格，`\text{}` 把括号内容当文本处理。这种写法 pandoc 能稳定渲染，docx 中显示效果与传统 LaTeX 公式编号一致。
 
 ## 图片 DPI 规则
 
@@ -59,18 +72,19 @@ im.save(path, dpi=(needed_dpi, needed_dpi))
 
 ## Markdown 表格格式规则
 
-Markdown 中的表格**必须**使用 grid table 格式（`+--+--+` 边框），**不得**使用 pipe table 格式（`| | |`）。原因：pandoc 将 pipe table 转为 docx 时无法控制列宽，导致窄列文字断行错乱。
+**优先使用 pipe table 格式**（`| | |` 加 `|---|---|`）。
 
-Grid table 示例：
-```
-+----------+----------------------------+------------------+
-| 类别     | 符号                       | 含义             |
-+==========+============================+==================+
-| 参数     | K                          | 辖区数量         |
-+----------+----------------------------+------------------+
+```markdown
+| 类别 | 符号 | 含义 |
+|------|------|------|
+| 参数 | K    | 辖区数量 |
 ```
 
-列宽由 `+--+` 之间的字符数比例决定，pandoc 会按此比例分配 Word 表格列宽。
+**为什么不用 grid table**：grid table（`+--+--+` 边框形式）要求每行的 `|` 出现在严格对齐的字符位置上。但 pandoc 对中文字符按 East Asian Width 计算视觉宽度（中文 = 2），与 markdown 源文件的纯字符数对齐方式冲突——当中文密集列的内容跨越多行时，pandoc 会把列结构识别错乱（多算一列、内容串行），生成的 docx 表格完全错位。**这种错乱不会触发 pandoc warning**，因此除非肉眼检查 docx 否则不会发现。
+
+历史教训：原本第二章表 2-1 和第四章表 4-1/4-2/4-3 都用了 grid table，docx 渲染时全部出现"表头被合并、数据行串到下一行"等问题，统一改 pipe table 后正常。
+
+**关于 pipe table 列宽**：pandoc 转 docx 时会按内容估算列宽，中文场景下通常表现良好。如果需要精确控制列宽，在表前加属性 `: {col-widths="2,3,5"}` 或拆分长列。但绝大多数论文表格用默认估算就够了。
 
 ---
 
@@ -86,11 +100,11 @@ Grid table 示例：
 ## 论文核心信息
 
 ### 研究主题
-运筹优化算法（四层地理聚类 + 模拟退火 + Hungarian 匹配）在制药企业 SFE（Sales Force Effectiveness）辖区动态分配中的落地应用，包括数学模型构建、算法设计、实证验证及商业化探索。
+运筹优化算法（六层地理聚类 + 模拟退火 + Hungarian 匹配）在制药企业 SFE（Sales Force Effectiveness）辖区动态分配中的落地应用，包括数学模型构建、算法设计、实证验证及商业化探索。
 
 ### 论文大纲（7章）
 
-本论文采用 Option2（两阶段法）作为唯一方法论：第一阶段用四层地理聚类+模拟退火纯优化均衡性，第二阶段用 Hungarian 算法匹配历史辖区号。不涉及 Option1（历史惩罚法）。
+本论文采用 Option2（两阶段法）作为唯一方法论：第一阶段用六层地理聚类+模拟退火纯优化均衡性，第二阶段用 Hungarian 算法匹配历史辖区号。不涉及 Option1（历史惩罚法）。
 
 ```
 第一章 绪论
@@ -155,7 +169,7 @@ Grid table 示例：
   4.5 两阶段求解算法设计
     4.5.1 算法整体架构："均衡优化—历史匹配"两阶段流程
     4.5.2 第一阶段：基于地理聚类与模拟退火的均衡优化
-      4.5.2.1 四层地理聚类初始分配
+      4.5.2.1 六层地理聚类初始分配
         (1) Layer 1：大医院独占与拆分份额分散
         (2) Layer 2：区县聚合
         (3) Layer 3：城市聚合
@@ -224,14 +238,14 @@ Grid table 示例：
 
 ```
 原始医院数据 → 预处理(大医院虚拟拆分) → 按省份分组 → 每省独立执行:
-  四层地理聚类(初始分配) → 模拟退火SA(均衡优化) → [Option2: Hungarian匹配]
+  六层地理聚类(初始分配) → 模拟退火SA(均衡优化) → Hungarian匹配（全模式生效）
 → 汇总全国结果
 ```
 
 ### 关键算法模块
 
 1. **预处理 — 大医院虚拟拆分**：index > 理想值×1.5 的医院等分为 n 个虚拟医院
-2. **四层地理聚类**：Layer1 大医院独占 → Layer2 区县聚合 → Layer3 城市聚合 → Layer4 组合聚合
+2. **六层地理聚类**：Layer1 大医院独占+拆分分散 → Layer2 区县聚合 → Layer3 城市聚合（含一对一城市强制独立）→ Layer4 剩余城市收集 → Layer5 亲和图预合并 → Layer6 落单城市归属
 3. **Maximin 种子选择**：score = minDist × (index / maxIndex)，兼顾地理分散和 index 权重
 4. **模拟退火（SA）**：Move(60%) / Swap(40%)，邻接辖区间操作，100,000次迭代，纯均衡优化（不含历史惩罚）
 5. **代价函数**：基于阈值的统一惩罚框架，(违反量 / threshold) × BASE_PENALTY
@@ -240,7 +254,7 @@ Grid table 示例：
 
 ### 方法论：两阶段法
 本论文采用两阶段法作为唯一方法论，将均衡优化与历史延续性完全解耦：
-- **第一阶段（均衡优化）**：四层地理聚类生成初始分配 → 模拟退火纯优化均衡性（SA 代价函数不含历史惩罚）
+- **第一阶段（均衡优化）**：六层地理聚类生成初始分配 → 模拟退火纯优化均衡性（SA 代价函数不含历史惩罚，500,000 次迭代，前 80% 标准退火 + 后 20% 贪心抛光）
 - **第二阶段（历史匹配）**：用 Hungarian 算法将第一阶段产出的匿名簇映射到历史辖区 ID，最大化历史延续性
 
 这种解耦设计的学术价值在于：均衡性不受历史数据干扰，历史延续性由独立的最优匹配保证，两个目标各自达到最优而非相互妥协。

@@ -1,8 +1,45 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Territory, Hospital, RegionConstraintParams, Constraint } from '@/types';
 import { Scale } from 'lucide-react';
+
+// 数字输入组件：支持自由键入，失焦/回车提交，外部值变化时同步
+function NumInput({ value, onChange, min = 0, step = 1, width = 'w-16' }: {
+  value: number; onChange: (v: number) => void; min?: number; step?: number; width?: string;
+}) {
+  const [text, setText] = useState(String(value));
+  const focused = useRef(false);
+
+  // 外部值变化时同步（仅在未聚焦时）
+  useEffect(() => {
+    if (!focused.current) setText(String(value));
+  }, [value]);
+
+  const commit = () => {
+    const v = parseInt(text);
+    if (!isNaN(v) && v >= min) {
+      onChange(v);
+      setText(String(v));
+    } else {
+      setText(String(value));
+    }
+  };
+
+  return (
+    <input
+      type="number"
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onFocus={() => { focused.current = true; }}
+      onBlur={() => { focused.current = false; commit(); }}
+      onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+      className={`${width} text-center border border-gray-200 rounded px-1 py-0.5 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400`}
+      min={min}
+      step={step}
+    />
+  );
+}
 
 interface RegionConstraintEditorProps {
   hospitals: Hospital[];
@@ -152,6 +189,11 @@ export default function RegionConstraintEditor({
     });
   }, []);
 
+  // 全局行修改时，同步更新所有大区行的对应字段
+  const updateGlobalField = useCallback((field: keyof RegionConstraintParams, value: number) => {
+    setParams((prev) => prev.map((p) => ({ ...p, [field]: value })));
+  }, []);
+
   const hasProductGroup = params.some((p) => p.productGroup);
 
   if (!hasAnyColumn) {
@@ -167,17 +209,7 @@ export default function RegionConstraintEditor({
 
   const numCell = (value: number, onChangeVal: (v: number) => void, min = 0, step = 1, width = 'w-16') => (
     <td className="px-1 py-2 text-center">
-      <input
-        type="number"
-        value={value}
-        onChange={(e) => {
-          const v = parseInt(e.target.value);
-          if (!isNaN(v) && v >= min) onChangeVal(v);
-        }}
-        className={`${width} text-center border border-gray-200 rounded px-1 py-0.5 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400`}
-        min={min}
-        step={step}
-      />
+      <NumInput value={value} onChange={onChangeVal} min={min} step={step} width={width} />
     </td>
   );
 
@@ -257,28 +289,43 @@ export default function RegionConstraintEditor({
                 <>
                   {readonlyCell(global.indexMin)}
                   {readonlyCell(global.indexMax)}
-                  {numCell(global.indexThreshold, (v) => global.indexRangeId && onThresholdChange(global.indexRangeId, v), 50, 50)}
+                  {numCell(global.indexThreshold, (v) => {
+                    global.indexRangeId && onThresholdChange(global.indexRangeId, v);
+                    updateGlobalField('indexThreshold', v);
+                  }, 50, 50)}
                 </>
               )}
               {showCapacity && (
                 <>
                   {readonlyCell(global.capacityMax)}
-                  {numCell(global.capacityThreshold, (v) => global.capacityId && onThresholdChange(global.capacityId, v), 1, 1)}
+                  {numCell(global.capacityThreshold, (v) => {
+                    global.capacityId && onThresholdChange(global.capacityId, v);
+                    updateGlobalField('capacityThreshold', v);
+                  }, 1, 1)}
                 </>
               )}
               {showCityLimit && (
                 <>
                   {readonlyCell(global.cityLimitMax)}
-                  {numCell(global.cityThreshold, (v) => global.cityLimitId && onThresholdChange(global.cityLimitId, v), 1, 1)}
+                  {numCell(global.cityThreshold, (v) => {
+                    global.cityLimitId && onThresholdChange(global.cityLimitId, v);
+                    updateGlobalField('cityThreshold', v);
+                  }, 1, 1)}
                 </>
               )}
               {showDistance && readonlyCell(global.maxDistanceKm)}
               {showSplitCount && readonlyCell(global.splitThreshold)}
               {showHistorical && (
-                numCell(global.historicalThreshold, (v) => global.historicalId && onThresholdChange(global.historicalId, v), 50, 50)
+                numCell(global.historicalThreshold, (v) => {
+                  global.historicalId && onThresholdChange(global.historicalId, v);
+                  updateGlobalField('historicalThreshold', v);
+                }, 50, 50)
               )}
               {showDistrict && (
-                numCell(global.districtThreshold, (v) => global.districtId && onThresholdChange(global.districtId, v), 1, 1)
+                numCell(global.districtThreshold, (v) => {
+                  global.districtId && onThresholdChange(global.districtId, v);
+                  updateGlobalField('districtThreshold', v);
+                }, 1, 1)
               )}
             </tr>
 

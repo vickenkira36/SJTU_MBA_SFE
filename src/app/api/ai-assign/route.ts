@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
-const GEMINI_BASE_URL = 'https://us.aigw.galileo.roche.com/v1';
-const GEMINI_MODEL = 'gemini-2.5-pro';
+const GEMINI_BASE_URL = 'https://eu.aigw.galileo.roche.com/v1';
+const GEMINI_MODEL = 'eu.anthropic.claude-opus-4-7';
 
 const SYSTEM_PROMPT = `你是一个专业的SFE（Sales Force Effectiveness）辖区分配专家。用户会用自然语言描述他们的辖区分配需求和约束条件，你需要理解需求并完成医院到辖区的分配。
 
@@ -71,7 +71,7 @@ ${hospitalLines.join('\n')}`;
     ];
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 300000); // 5 min for large datasets
+    const timeout = setTimeout(() => controller.abort(), 300000);
 
     let response;
     try {
@@ -79,12 +79,12 @@ ${hospitalLines.join('\n')}`;
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
+          'x-portkey-api-key': apiKey,
         },
         body: JSON.stringify({
           model: GEMINI_MODEL,
+          max_tokens: 9000,
           messages: apiMessages,
-          stream: true,
         }),
         signal: controller.signal,
       });
@@ -100,81 +100,16 @@ ${hospitalLines.join('\n')}`;
 
     if (!response.ok) {
       const errText = await response.text();
-      return new Response(JSON.stringify({ error: `Gemini API 错误 (${response.status}): ${errText.slice(0, 300)}` }), {
+      return new Response(JSON.stringify({ error: `LLM API 错误 (${response.status}): ${errText.slice(0, 300)}` }), {
         status: response.status, headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    // Stream through
-    const encoder = new TextEncoder();
-    const readable = new ReadableStream({
-      async start(streamController) {
-        const reader = response.body?.getReader();
-        if (!reader) {
-          streamController.enqueue(encoder.encode(`data: ${JSON.stringify({ error: '无响应体' })}\n\n`));
-          streamController.close();
-          return;
-        }
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
 
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (!trimmed) continue;
-              if (trimmed === 'data: [DONE]') {
-                streamController.enqueue(encoder.encode('data: [DONE]\n\n'));
-                continue;
-              }
-              if (trimmed.startsWith('data: ')) {
-                try {
-                  const json = JSON.parse(trimmed.slice(6));
-                  const delta = json.choices?.[0]?.delta?.content;
-                  if (delta) {
-                    streamController.enqueue(encoder.encode(`data: ${JSON.stringify({ content: delta })}\n\n`));
-                  }
-                } catch {
-                  // Skip
-                }
-              }
-            }
-          }
-
-          if (buffer.trim() && buffer.trim().startsWith('data: ') && buffer.trim() !== 'data: [DONE]') {
-            try {
-              const json = JSON.parse(buffer.trim().slice(6));
-              const delta = json.choices?.[0]?.delta?.content;
-              if (delta) {
-                streamController.enqueue(encoder.encode(`data: ${JSON.stringify({ content: delta })}\n\n`));
-              }
-            } catch { /* skip */ }
-          }
-
-          streamController.enqueue(encoder.encode('data: [DONE]\n\n'));
-        } catch (err) {
-          streamController.enqueue(encoder.encode(`data: ${JSON.stringify({ error: err instanceof Error ? err.message : 'Stream error' })}\n\n`));
-        } finally {
-          streamController.close();
-          reader.releaseLock();
-        }
-      },
-    });
-
-    return new Response(readable, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      },
+    return new Response(JSON.stringify({ content }), {
+      headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
     return new Response(

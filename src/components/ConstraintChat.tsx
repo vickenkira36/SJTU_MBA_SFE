@@ -136,7 +136,7 @@ export default function ConstraintChat({
     const welcome = generateWelcomeMessage(hospitals, territories);
     const presetSummary = initialConstraints && initialConstraints.length > 0
       ? '\n\n已恢复之前设置的约束条件。您可以继续调整或直接开始优化。'
-      : '\n\n**已加载6条默认约束条件**（见右侧面板）。您可以直接点击「开始算法分配」，或通过对话调整约束数值。';
+      : `\n\n**已加载${constraints.length}条默认约束条件**（见右侧面板）。您可以直接点击「开始算法分配」，或通过对话调整约束数值。`;
     setMessages([
       {
         id: 'welcome',
@@ -145,7 +145,8 @@ export default function ConstraintChat({
         timestamp: new Date(),
       },
     ]);
-  }, [hospitals, territories, initialConstraints]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hospitals, territories, initialConstraints, constraints.length]);
 
   useEffect(() => {
     // Scroll only within the chat container, not the entire page
@@ -283,7 +284,7 @@ export default function ConstraintChat({
           <span className="text-xs text-gray-400 ml-auto flex items-center gap-2">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-50 text-green-600 rounded text-xs">
               <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
-              GPT-5.2
+              辖区分配AI助手
             </span>
             {hospitals.length}家医院 · {territories.length}个辖区
           </span>
@@ -343,7 +344,7 @@ export default function ConstraintChat({
                     <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
                     <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                   </div>
-                  <span>GPT-5.2 分析中...</span>
+                  <span>AI正在思考中...</span>
                 </div>
               </div>
             </div>

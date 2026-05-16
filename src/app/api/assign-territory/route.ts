@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
-const GEMINI_BASE_URL = 'https://us.aigw.galileo.roche.com/v1';
-const GEMINI_MODEL = 'gemini-2.5-pro';
+const GEMINI_BASE_URL = 'https://eu.aigw.galileo.roche.com/v1';
+const GEMINI_MODEL = 'eu.anthropic.claude-opus-4-7';
 
 const SYSTEM_PROMPT = `你是一个专业的SFE（Sales Force Effectiveness）辖区分配专家。你的任务是将医院分配到销售辖区。
 
@@ -89,7 +89,6 @@ ${batchNote}
 
 请输出JSON分配结果。`;
 
-    // Request streaming from Gemini
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 180000);
 
@@ -99,15 +98,15 @@ ${batchNote}
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
+          'x-portkey-api-key': apiKey,
         },
         body: JSON.stringify({
           model: GEMINI_MODEL,
+          max_tokens: 9000,
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
             { role: 'user', content: userMessage },
           ],
-          stream: true,
         }),
         signal: controller.signal,
       });
@@ -120,7 +119,7 @@ ${batchNote}
           headers: { 'Content-Type': 'application/json' },
         });
       }
-      return new Response(JSON.stringify({ error: `无法连接到 Gemini API: ${msg}` }), {
+      return new Response(JSON.stringify({ error: `无法连接到 LLM API: ${msg}` }), {
         status: 502,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -130,97 +129,18 @@ ${batchNote}
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error('Gemini API error:', response.status, errText);
-      return new Response(JSON.stringify({ error: `Gemini API 错误 (${response.status}): ${errText.slice(0, 300)}` }), {
+      console.error('LLM API error:', response.status, errText);
+      return new Response(JSON.stringify({ error: `LLM API 错误 (${response.status}): ${errText.slice(0, 300)}` }), {
         status: response.status,
         headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    // Stream the response through as SSE
-    const encoder = new TextEncoder();
-    const readable = new ReadableStream({
-      async start(streamController) {
-        const reader = response.body?.getReader();
-        if (!reader) {
-          streamController.enqueue(encoder.encode(`data: ${JSON.stringify({ error: '无响应体' })}\n\n`));
-          streamController.close();
-          return;
-        }
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
 
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (!trimmed || trimmed === 'data: [DONE]') {
-                if (trimmed === 'data: [DONE]') {
-                  streamController.enqueue(encoder.encode('data: [DONE]\n\n'));
-                }
-                continue;
-              }
-              if (trimmed.startsWith('data: ')) {
-                try {
-                  const json = JSON.parse(trimmed.slice(6));
-                  const delta = json.choices?.[0]?.delta?.content;
-                  if (delta) {
-                    streamController.enqueue(
-                      encoder.encode(`data: ${JSON.stringify({ content: delta })}\n\n`)
-                    );
-                  }
-                } catch {
-                  // Skip unparseable lines
-                }
-              }
-            }
-          }
-
-          // Process remaining buffer
-          if (buffer.trim()) {
-            const trimmed = buffer.trim();
-            if (trimmed.startsWith('data: ') && trimmed !== 'data: [DONE]') {
-              try {
-                const json = JSON.parse(trimmed.slice(6));
-                const delta = json.choices?.[0]?.delta?.content;
-                if (delta) {
-                  streamController.enqueue(
-                    encoder.encode(`data: ${JSON.stringify({ content: delta })}\n\n`)
-                  );
-                }
-              } catch {
-                // Skip
-              }
-            }
-          }
-
-          streamController.enqueue(encoder.encode('data: [DONE]\n\n'));
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : 'Stream error';
-          streamController.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ error: msg })}\n\n`)
-          );
-        } finally {
-          streamController.close();
-          reader.releaseLock();
-        }
-      },
-    });
-
-    return new Response(readable, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      },
+    return new Response(JSON.stringify({ content }), {
+      headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
     console.error('Assign territory error:', err);

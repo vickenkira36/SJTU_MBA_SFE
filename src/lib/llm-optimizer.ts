@@ -41,7 +41,7 @@ function createBatches(hospitals: Hospital[]): Hospital[][] {
 }
 
 /**
- * Consume SSE stream from /api/assign-territory and accumulate full JSON text.
+ * 调用 /api/assign-territory 获取分配结果。
  */
 async function assignBatchStreaming(
   hospitals: Hospital[],
@@ -75,55 +75,18 @@ async function assignBatchStreaming(
     }),
   });
 
-  // Check if response is SSE stream or regular JSON (error case)
-  const contentType = res.headers.get('content-type') || '';
-
-  if (!res.ok || !contentType.includes('text/event-stream')) {
-    // Non-streaming error response
+  if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
     throw new Error(err.error || `API 错误 ${res.status}`);
   }
 
-  // Read SSE stream
-  const reader = res.body?.getReader();
-  if (!reader) throw new Error('无响应体');
+  const resData = await res.json();
+  if (resData.error) throw new Error(resData.error);
 
-  const decoder = new TextDecoder();
-  let fullContent = '';
-  let buffer = '';
+  const fullContent = resData.content || '';
+  if (onStream) onStream(fullContent);
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed === 'data: [DONE]') continue;
-      if (trimmed.startsWith('data: ')) {
-        try {
-          const data = JSON.parse(trimmed.slice(6));
-          if (data.error) throw new Error(data.error);
-          if (data.content) {
-            fullContent += data.content;
-            onStream?.(data.content);
-          }
-        } catch (e) {
-          if (e instanceof Error && e.message !== 'Unexpected end of JSON input') {
-            // Re-throw real errors, skip parse errors from partial chunks
-            if (!e.message.includes('JSON')) throw e;
-          }
-        }
-      }
-    }
-  }
-
-  reader.releaseLock();
-
-  // Parse accumulated JSON
+  // 解析 JSON
   let jsonStr = fullContent.trim();
 
   // Strip markdown code blocks

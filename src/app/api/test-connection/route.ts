@@ -1,20 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
-  const apiKey = 'nJTvneF1ooX3+xzfNRA0Tt04Bp8i';
+  const apiKey = 'x+QB4FtRwyBQwQMlie5WxTtsK9g5';
 
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
 
-    const response = await fetch('https://us.aigw.galileo.roche.com/v1/chat/completions', {
+    const response = await fetch('https://eu.aigw.galileo.roche.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-portkey-api-key': apiKey,
       },
       body: JSON.stringify({
-        model: 'gpt-5.2-2025-12-11',
+        model: 'eu.anthropic.claude-opus-4-7',
+        max_tokens: 100,
         messages: [{ role: 'user', content: '回复OK' }],
       }),
       signal: controller.signal,
@@ -42,7 +43,7 @@ export async function POST(request: NextRequest) {
     if (msg.includes('abort')) {
       return NextResponse.json({
         success: false,
-        error: '连接超时（15秒）。可能原因：1) 网络无法访问 api.deepseek.com  2) 需要配置代理',
+        error: '连接超时（15秒）。可能原因：1) 网络无法访问 eu.aigw.galileo.roche.com  2) API Key 无效',
       });
     }
     return NextResponse.json({

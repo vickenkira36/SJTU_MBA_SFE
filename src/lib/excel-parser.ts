@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import { Hospital, Territory, LockAssignment, HistoricalAssignment } from '@/types';
 
-const HOSPITAL_FIELD_MAP: Record<string, string> = {
+export const HOSPITAL_FIELD_MAP: Record<string, string> = {
   'inscode': 'inscode',
   'insname': 'insname',
   '区县': 'district',
@@ -34,7 +34,7 @@ const HOSPITAL_FIELD_MAP: Record<string, string> = {
   '省': 'province',
 };
 
-const TERRITORY_FIELD_MAP: Record<string, string> = {
+export const TERRITORY_FIELD_MAP: Record<string, string> = {
   'TRTY_CODE': 'trtyCode',
   'Rep': 'rep',
   '省份': 'province',
@@ -278,6 +278,22 @@ export function parseTerritories(file: ArrayBuffer): { territories: Territory[];
   return { territories, columns };
 }
 
+export const HISTORICAL_FIELD_MAP: Record<string, string> = {
+  'inscode': 'inscode',
+  '医院代码': 'inscode',
+  'TRTY_CODE': 'trtyCode',
+  '辖区代码': 'trtyCode',
+  '辖区': 'trtyCode',
+  '产品组': 'productGroup',
+  'productGroup': 'productGroup',
+  'product_group': 'productGroup',
+  '产品': 'productGroup',
+  '比例': 'portion',
+  'portion': 'portion',
+  'ratio': 'portion',
+  '占比': 'portion',
+};
+
 export function parseHistoricalAssignments(file: ArrayBuffer): { assignments: import('@/types').HistoricalAssignment[]; columns: string[] } {
   const workbook = XLSX.read(file, { type: 'array' });
   const sheetName = workbook.SheetNames[0];
@@ -290,21 +306,7 @@ export function parseHistoricalAssignments(file: ArrayBuffer): { assignments: im
 
   const columns = Object.keys(rawData[0]);
 
-  const fieldMap: Record<string, string> = {
-    'inscode': 'inscode',
-    '医院代码': 'inscode',
-    'TRTY_CODE': 'trtyCode',
-    '辖区代码': 'trtyCode',
-    '辖区': 'trtyCode',
-    '产品组': 'productGroup',
-    'productGroup': 'productGroup',
-    'product_group': 'productGroup',
-    '产品': 'productGroup',
-    '比例': 'portion',
-    'portion': 'portion',
-    'ratio': 'portion',
-    '占比': 'portion',
-  };
+  const fieldMap = HISTORICAL_FIELD_MAP;
 
   const assignments = rawData.map((row) => {
     const mapped: Record<string, unknown> = {};
@@ -325,6 +327,18 @@ export function parseHistoricalAssignments(file: ArrayBuffer): { assignments: im
   return { assignments, columns };
 }
 
+export const LOCK_FIELD_MAP: Record<string, string> = {
+  'inscode': 'inscode',
+  '医院代码': 'inscode',
+  'LEL': 'lel',
+  'lel': 'lel',
+  '地区经理': 'lel',
+  '产品组': 'productGroup',
+  'productGroup': 'productGroup',
+  'product_group': 'productGroup',
+  '产品': 'productGroup',
+};
+
 export function parseLockAssignments(file: ArrayBuffer): { lockAssignments: LockAssignment[]; columns: string[] } {
   const workbook = XLSX.read(file, { type: 'array' });
   const sheetName = workbook.SheetNames[0];
@@ -332,22 +346,12 @@ export function parseLockAssignments(file: ArrayBuffer): { lockAssignments: Lock
   const rawData = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
 
   if (rawData.length === 0) {
-    throw new Error('锁定清单为空');
+    return { lockAssignments: [], columns: [] };
   }
 
   const columns = Object.keys(rawData[0]);
 
-  const fieldMap: Record<string, string> = {
-    'inscode': 'inscode',
-    '医院代码': 'inscode',
-    'LEL': 'lel',
-    'lel': 'lel',
-    '地区经理': 'lel',
-    '产品组': 'productGroup',
-    'productGroup': 'productGroup',
-    'product_group': 'productGroup',
-    '产品': 'productGroup',
-  };
+  const fieldMap = LOCK_FIELD_MAP;
 
   const lockAssignments = rawData.map((row) => {
     const mapped: Record<string, unknown> = {};

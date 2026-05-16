@@ -220,48 +220,16 @@ export default function AIChatAssign({ hospitals, territories, onResult, onBack 
         }),
       });
 
-      const contentType = res.headers.get('content-type') || '';
-
-      if (!res.ok || !contentType.includes('text/event-stream')) {
+      if (!res.ok) {
         const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
         throw new Error(err.error || `API 错误 ${res.status}`);
       }
 
-      // Read SSE stream
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error('无响应体');
+      const resData = await res.json();
+      if (resData.error) throw new Error(resData.error);
 
-      const decoder = new TextDecoder();
-      let fullContent = '';
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed === 'data: [DONE]') continue;
-          if (trimmed.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(trimmed.slice(6));
-              if (data.error) throw new Error(data.error);
-              if (data.content) {
-                fullContent += data.content;
-                setStreamingContent(fullContent);
-              }
-            } catch (e) {
-              if (e instanceof Error && !e.message.includes('JSON')) throw e;
-            }
-          }
-        }
-      }
-
-      reader.releaseLock();
+      const fullContent = resData.content || '';
+      setStreamingContent(fullContent);
 
       // Add assistant message
       const assistantMsg: ChatMessage = {
@@ -306,8 +274,8 @@ export default function AIChatAssign({ hospitals, territories, onResult, onBack 
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8">
           <div className="text-center mb-6">
             <Key className="mx-auto h-12 w-12 text-purple-500 mb-3" />
-            <h3 className="text-lg font-semibold text-gray-900">配置 Gemini API</h3>
-            <p className="text-sm text-gray-500 mt-2">AI 分配模式使用 Gemini 2.5 Pro</p>
+            <h3 className="text-lg font-semibold text-gray-900">配置 API Key</h3>
+            <p className="text-sm text-gray-500 mt-2">AI 分配模式需要 Portkey API Key</p>
           </div>
           <div className="space-y-4">
             <div className="relative">
@@ -316,7 +284,7 @@ export default function AIChatAssign({ hospitals, territories, onResult, onBack 
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSaveApiKey()}
-                placeholder="Gemini API Key"
+                placeholder="Portkey API Key"
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm text-gray-900 placeholder:text-gray-400 pr-10"
               />
               <button
@@ -354,7 +322,7 @@ export default function AIChatAssign({ hospitals, territories, onResult, onBack 
           <span className="text-xs text-purple-400 ml-auto flex items-center gap-2">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-600 rounded text-xs">
               <span className="w-1.5 h-1.5 bg-purple-500 rounded-full" />
-              Gemini 2.5 Pro
+              辖区分配AI助手
             </span>
             {hospitals.length}家医院 · {territories.length}个辖区
           </span>
@@ -393,7 +361,7 @@ export default function AIChatAssign({ hospitals, territories, onResult, onBack 
               <div className="bg-gray-100 rounded-2xl px-4 py-3">
                 <div className="flex items-center gap-2 text-sm text-gray-500">
                   <Loader2 className="h-4 w-4 animate-spin text-purple-500" />
-                  <span>Gemini 正在分析和分配...</span>
+                  <span>AI正在思考中...</span>
                 </div>
               </div>
             </div>

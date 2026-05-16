@@ -4,7 +4,7 @@
 
 ```
 数据上传 → 预处理（医院拆分） → 按省份分组 → 每省独立执行：
-  地理聚类（初始分配） → 模拟退火（均衡优化） → [Option2: Hungarian匹配]
+  六层地理聚类（初始分配） → 模拟退火（均衡优化） → Hungarian匹配（簇→辖区映射）
 → 汇总结果
 ```
 
@@ -28,38 +28,50 @@
 
 拆分后的虚拟医院共享同一坐标和城市，但在后续所有阶段中作为独立单元参与分配。同一医院的不同份不允许分到同一个辖区（拆分分散硬约束）。
 
-## 1. 四层地理聚类
+## 1. 六层地理聚类
 
 将 N 家虚拟医院分配到 K 个簇（K = 辖区数），按地理层级逐步细化。
 
-### Layer 1: 大医院独占簇
+### Layer 1: 大医院独占 + 拆分分散
 
-- index ≥ 理想值 的医院各自独占一个簇
-- 按 index 降序处理，直到簇数用完或没有更多大医院
+- **Phase 1a**：index ≥ 理想值 的医院各自独占一个簇
+- **Phase 1b**：所有拆分份额（portion < 1）分散到不同簇。如果簇数未满，创建新簇；否则放入 index 最低且不含同一医院其他份额的簇
 
 ### Layer 2: 区县聚合
 
 - 将同区县的剩余医院聚合
-- 区县 index ≤ 理想值 → 整个区县作为一个簇
-- 区县 index 是理想值的 2~3 倍 → 用 Maximin 选种子，拆成多个簇
+- 区县 totalIndex ≥ indexMin → 整个区县作为一个簇
+- 区县 totalIndex 是理想值的 2~3 倍 → 用 Maximin 选种子，拆成多个簇
 
-### Layer 3: 城市聚合
+### Layer 3: 城市聚合（含一对一城市强制独立）
 
-- 将同城市的剩余医院聚合
-- 逻辑同 Layer 2，按城市维度
+- 将同城市的剩余医院聚合，逻辑同 Layer 2
+- **一对一城市**（历史上只属于 1 个辖区的城市）不受 indexMin 限制，强制独立成簇，且优先占 slot
+- 一对一城市即使 `round(totalIndex / 理想值) = 0`，也强制 numClusters = 1
+- 排序时一对一城市排在非一对一城市前面，确保优先获得簇位
+- 过小的 sub-cluster（index < indexMin × 0.3）归并到同城市最近的 sub-cluster
 
-### Layer 4: 组合聚合
+### Layer 4: 剩余城市收集
 
-- 剩余未分配的医院，用 Maximin 选种子分配
+- 剩余未分配的医院按城市分组，构建城市组（含质心和 totalIndex）
 
-### 1.5 补充机制
+### Layer 5: 亲和预合并
 
-- **簇不足**：如果四层处理后簇数 < N，将 index 最大的簇用 Maximin 一分为二，重复直到簇数 = N
-- **未分配医院**：兜底分配到最近的簇
-- **锁定医院处理**：锁定数据指定医院归属某个 LEL，一个 LEL 下有多个 territory。`buildLockMap` 将 inscode 映射到该 LEL 下所有 territory indices 的集合（`allowedSet`）。聚类末尾按以下规则处理：
-  - **非拆分锁定医院**：移到 allowedSet 中 index 总和最低的簇
-  - **拆分锁定医院**：各份额 round-robin 分散到 allowedSet 中的不同簇（按簇 index 升序排列后轮流分配），确保同一医院的不同份额不会聚集在同一个 territory，同时所有份额都在指定 LEL 范围内
-- **空簇修复（Rebalance）**：锁定处理可能导致某些簇变空。遍历所有空簇，从最大的簇中捐赠一家最小 index 的医院（不违反锁定约束）
+- 在 Layer 4 的城市组中，直接亲和的城市对按距离排序后贪心合并
+- 每个城市只参与一次合并（不传递），防止滚雪球
+- 合并后每个城市组直接生成一个簇
+
+### Layer 6: 落单城市归属
+
+- 如果簇数 > K，多余的簇（从 index 最小的 Layer 5 簇开始）按距离归属到最近的已有簇
+- 不限制目标簇的层级，在所有簇中按距离搜索
+- 受 maxCities 约束：合并后城市数不能超过上限
+
+### 补充机制
+
+- **簇不足**：如果六层处理后簇数 < K，将 index 最大的簇用 Maximin 一分为二，重复直到簇数 = K
+- **未分配医院**：兜底分配到距离最近的簇
+- **空簇修复（Rebalance）**：遍历所有空簇，从最大的簇中捐赠一家最小 index 的医院（不违反锁定约束）
 
 ### Maximin 种子选择
 
@@ -68,6 +80,33 @@
 1. 第 1 个种子：选 index 最高的医院
 2. 后续种子：选 `score = minDist × (index / maxIndex)` 最大的候选（minDist 为到所有已选种子的最近距离）
 3. 剩余医院分配到最近的种子所在簇
+
+## 1.5 一对一城市
+
+历史上只属于 1 个辖区的城市（单向一对一，不要求辖区也只含 1 个城市）。
+
+**作用：**
+- **聚类阶段**：Layer 3 中强制独立成簇，不受 indexMin 限制，优先占 slot
+- **SA 阶段**：一对一城市的非拆分医院完全不能被 move/swap（`portion >= 0.999 → continue`）
+- **Hungarian 阶段**：包含一对一城市医院的簇对 allowed territory 加 1×10¹² 权重，确保正确匹配
+
+注意：cluster→territory 的映射完全由 Hungarian 算法决定，聚类阶段不指定簇对应哪个 territory。
+
+## 1.6 城市亲和图
+
+SA 和 Layer 5 合并使用城市亲和图（`CityAffinityMap`）约束城市间的移动关系。
+
+### 构建规则
+
+1. **历史数据**：从历史分配中提取，同一 trtyCode 下所有医院的城市互为亲和。例如历史辖区 TAM146 覆盖孝感+随州 → 孝感↔随州亲和。不传递：A↔B 且 B↔C 不意味着 A↔C。
+2. **距离补充**：无历史亲和关系的城市，取地理距离最近的 3 个城市建立亲和。
+3. 亲和关系对称：A 与 B 亲和 → B 与 A 亲和。每个城市与自身天然亲和。
+
+### 使用场景
+
+- **Layer 5 亲和预合并**：直接亲和的城市对按距离排序后贪心合并，每个城市只参与一次
+- **SA move**：医院城市必须与目标簇中任一城市亲和，否则跳过
+- **SA swap**：双向检查，h1 城市与目标簇亲和 且 h2 城市与源簇亲和
 
 ## 2. 模拟退火（SA）
 
@@ -85,6 +124,7 @@
 | 锁定医院（非拆分） | 跳过涉及该医院的 move/swap |
 | 锁定医院（拆分） | 允许在 allowedSet 内的 territory 之间 move/swap，跳过目标不在 allowedSet 的操作 |
 | 拆分分散 | 跳过会导致同一医院多份聚集的操作 |
+| 城市亲和 | move: 医院城市必须与目标簇中任一城市亲和；swap: 双向检查 |
 | 城市上限 | 跳过会导致目标簇城市数超限的操作 |
 | 空辖区保护 | 源 territory 只剩 1 家医院时跳过 move 操作 |
 | 空辖区 | 代价函数中给予 1×10⁸ 惩罚 |
@@ -92,31 +132,42 @@
 ### 2.3 代价函数
 
 ```
-总代价 = Σ 每个辖区的代价
+总代价 = Σ 每个辖区的代价 + 全局历史稳定性惩罚
 ```
 
-每个辖区的代价由以下分项加权求和：
+BASE_PENALTY = 10000
 
-| 分项 | 计算方式 | 权重 |
-|------|---------|------|
-| Index 偏差 | `(totalIndex - indexTarget)² / indexTarget` | 10 |
-| 容量偏差 | `max(hospitalCount - maxCapacity, 0)` | 5 |
-| 城市分散度 | `max(cityCount - maxCities, 0)` | 3 |
-| 区县集中度 | `max(districtCount - 1, 0)` | 1 |
-| 地理跨度 | `maxPairwiseDistance / 100` | 2 |
-| 锁定违反 | 医院不在 allowedSet 中 → `index × 10` | 1 |
-| 历史稳定性（Option1） | 医院不在历史辖区中 → `index × weight × 10` | 1 |
+**Per-cluster 惩罚：**
+
+| 分项 | 计算方式 | 量级示例 |
+|------|---------|---------|
+| 空簇 | +1×10⁸ | 硬约束 |
+| Index 越界 | `(超出量 / threshold) × BASE_PENALTY` | 超出 200 → 10000 |
+| 城市数超限 | `(超出数 / threshold) × BASE_PENALTY` | 多 1 城市 → 10000 |
+| 医院数超限 | `(超出数 / threshold) × BASE_PENALTY` | |
+| 区县分散 | `(区县数-1) / threshold × BASE_PENALTY` | 鼓励同区县集中 |
+| 地理离散 | `maxDistToCentroid²` | 100km→10000, 200km→40000, 500km→250000 |
+| lockMap 违反 | +1×10⁸ | 硬约束 |
+
+**全局惩罚：**
+
+| 分项 | 计算方式 |
+|------|---------|
+| 历史稳定性 | 按每家医院：`origIndex × changeRatio / threshold × BASE_PENALTY`。index 大的医院变动惩罚更重 |
 
 ### 2.4 退火参数
 
-- 初始温度：`T₀ = 初始代价 × 0.1`
-- 冷却：`T = T₀ × (1 - step/iterations)`
-- 迭代次数：100,000
-- 接受概率：`exp(-ΔCost / T)`
+- **初始温度 T₀**：自适应确定。正式迭代前执行 200 次探测移动（不实际接受），统计正 delta 的中位数，设 `T₀ = -deltaMedian / ln(0.5)`，使初始接受率约 50%
+- **终止温度**：`Tmin = T₀ × 10⁻⁴`
+- **冷却方式**：指数冷却 `T = T₀ × α^step`，其中 `α = (Tmin / T₀)^(1/iterations)`
+- **迭代次数**：300,000
+- **接受准则（Metropolis）**：`delta < 0` 直接接受；`delta ≥ 0` 以概率 `exp(-delta / T)` 接受
+- **最优解记录**：维护 `bestAssignments` / `bestCost`，每次接受后检查更新，迭代结束返回全局最优解
+- **邻接图动态更新**：每 50,000 步重建邻接图，确保移动操作覆盖当前布局下的合理邻居
 
-## 3. Option2: Hungarian 匹配
+## 3. Hungarian 匹配（全模式生效）
 
-Option2 的 SA 阶段不使用历史稳定性惩罚，纯粹优化均衡性。SA 完成后，用 Hungarian 算法将簇映射到历史辖区 ID。
+所有模式（Option1/Option2）的 SA 完成后，都用 Hungarian 算法将簇映射到历史辖区 ID。Option2 的 SA 阶段不使用历史稳定性惩罚，纯粹优化均衡性。
 
 ### 3.1 目标
 
@@ -202,7 +253,7 @@ if h.city ∈ 历史辖区j的城市集合:
 | 城市分散 | `max(cities - max, 0)` | 3 |
 | 区县集中度 | `max(districtCount - 1, 0)` | 1 |
 | 地理跨度 | `maxDist / 100` | 2 |
-| 历史稳定性 | `index × weight × 10`（仅 Option1） | 1 |
+| 历史稳定性 | `(index × changeRatio / threshold) × BASE_PENALTY × (1 + index/1000)`（仅 Option1） | — |
 
 ## 6. 数据流
 
@@ -220,15 +271,15 @@ lock.xlsx ──→ parseLockAssignments() ──→ buildLockMap() ──→ Lo
                               ┌─── 按省份分组 ───┐
                               │                  │
                         fourLayerClustering()  buildEffectiveConstraints()
-                         (含 lock 处理 +          │
+                         (六层聚类 +               │
                           rebalance)              │
                               │                  │
                        buildAdjacency()           │
                               │                  │
                        runOptimization() ←────────┘
                               │
-                    [matchClustersToHistory()]  ← Option2 only
-                       (含历史比例加权)            ↑
+                    matchClustersToHistory()  ← 全模式生效
+                       (含 lockMap 权重加成)       ↑
                               │          historical.xlsx (含可选比例列)
                        buildResult()
                               │
@@ -240,3 +291,7 @@ lock.xlsx ──→ parseLockAssignments() ──→ buildLockMap() ──→ Lo
 ## 7. 变更记录
 
 - **v3.4 Maximin 种子选择加权**：后续种子选择从纯距离改为 `score = minDist × (index / maxIndex)`，同时考虑地理分散和 index 权重。第 1 个种子仍按 index 最高选取。影响范围：Layer 2 区县拆分、Layer 3 城市拆分、簇不足时的一分为二。
+- **v3.6 贪心爬山 → 模拟退火**：引入 Metropolis 准则替代贪心接受，自适应初始温度（探测 200 次取 delta 中位数），指数冷却，迭代次数 100k → 300k，维护全局最优解，邻接图每 50k 步重建。
+- **v3.6 城市亲和图**：从历史分配构建城市间亲和关系，无历史的城市用距离补充。SA 的 move/swap 操作必须满足城市亲和约束。Layer 4 合并时亲和城市距离打 0.3 折。
+- **v3.7 Hungarian 全模式 + 一对一城市锁定**：Hungarian 匹配从 Option2 专用改为全模式生效。新增一对一城市识别（`buildExclusiveCities`），SA 阶段锁定不可移动。
+- **v3.8 六层聚类重构 + 地理惩罚提升**：四层聚类扩展为六层（新增 Layer 5 亲和预合并、Layer 6 落单城市归属）。一对一城市放宽为单向定义（城市只属于 1 个辖区即可），Layer 3 中强制独立成簇且优先占 slot。删除聚类末尾的 lockMap 移动逻辑，cluster→territory 映射完全交给 Hungarian。地理离散惩罚从 `maxDist²/100` 改为 `maxDist²`（权重提升 100 倍）。湖北测试变动率从 39.5% 降至 23.7%。

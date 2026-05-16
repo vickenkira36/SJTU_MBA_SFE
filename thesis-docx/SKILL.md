@@ -17,7 +17,16 @@ pandoc docs/chapterXX.md -o docs/chapterXX.docx \
   --reference-doc=docs/antai-template.docx \
   --resource-path=docs \
   --lua-filter=docs/superscript-cite.lua
+
+# 必须紧跟 post-process 步骤，否则表格列宽会按 pandoc 估算值固定，
+# 出现"窄列文字一字一断 + 单元格内容跨页拦腰切断"的视觉问题
+python3 docs/post_process_docx.py docs/chapterXX.docx
 ```
+
+`post_process_docx.py` 会对 docx 中所有表格做三件事：
+1. **AutoFit to contents** — 让 Word 按内容自动分配列宽
+2. **cantSplit** — 行内容禁止跨页拆分
+3. **tblHeader** — 表头在每个分页自动重复
 
 ## 环境依赖
 

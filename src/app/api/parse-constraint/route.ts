@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
-const API_URL = 'https://us.aigw.galileo.roche.com/v1/chat/completions';
-const MODEL = 'gpt-5.2-2025-12-11';
+const API_URL = 'https://eu.aigw.galileo.roche.com/v1/chat/completions';
+const MODEL = 'eu.anthropic.claude-opus-4-7';
 
 const SYSTEM_PROMPT = `你是辖区分配约束解析器。将用户自然语言解析为JSON。
 
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { userInput, dataContext, constraintsContext } = body;
-    const apiKey = 'nJTvneF1ooX3+xzfNRA0Tt04Bp8i';
+    const apiKey = 'x+QB4FtRwyBQwQMlie5WxTtsK9g5';
 
     if (!userInput) {
       return new Response(JSON.stringify({ error: '请提供约束描述' }), {
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     userMessage += `用户输入的约束条件：${userInput}`;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
+    const timeout = setTimeout(() => controller.abort(), 120000);
 
     let response;
     try {
@@ -65,11 +65,11 @@ export async function POST(request: NextRequest) {
         },
         body: JSON.stringify({
           model: MODEL,
+          max_tokens: 9000,
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
             { role: 'user', content: userMessage },
           ],
-          stream: true,
         }),
         signal: controller.signal,
       });
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
       clearTimeout(timeout);
       const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
       if (msg.includes('abort')) {
-        return new Response(JSON.stringify({ error: '请求超时（30秒）' }), { status: 504, headers: { 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ error: '请求超时（120秒）' }), { status: 504, headers: { 'Content-Type': 'application/json' } });
       }
       return new Response(JSON.stringify({ error: `无法连接到 LLM API: ${msg}` }), { status: 502, headers: { 'Content-Type': 'application/json' } });
     } finally {
@@ -93,82 +93,11 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Stream SSE chunks from upstream to client
-    const encoder = new TextEncoder();
-    const readable = new ReadableStream({
-      async start(ctrl) {
-        const reader = response.body?.getReader();
-        if (!reader) {
-          ctrl.enqueue(encoder.encode(`data: ${JSON.stringify({ error: '无响应体' })}\n\n`));
-          ctrl.enqueue(encoder.encode('data: [DONE]\n\n'));
-          ctrl.close();
-          return;
-        }
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
 
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (!trimmed) continue;
-              if (trimmed === 'data: [DONE]') {
-                ctrl.enqueue(encoder.encode('data: [DONE]\n\n'));
-                continue;
-              }
-              if (trimmed.startsWith('data: ')) {
-                const jsonStr = trimmed.slice(6);
-                try {
-                  const chunk = JSON.parse(jsonStr);
-                  const delta = chunk.choices?.[0]?.delta?.content;
-                  if (delta) {
-                    ctrl.enqueue(encoder.encode(`data: ${JSON.stringify({ content: delta })}\n\n`));
-                  }
-                } catch {
-                  // skip unparseable chunks
-                }
-              }
-            }
-          }
-
-          // Process remaining buffer
-          if (buffer.trim()) {
-            const trimmed = buffer.trim();
-            if (trimmed.startsWith('data: ') && trimmed !== 'data: [DONE]') {
-              try {
-                const chunk = JSON.parse(trimmed.slice(6));
-                const delta = chunk.choices?.[0]?.delta?.content;
-                if (delta) {
-                  ctrl.enqueue(encoder.encode(`data: ${JSON.stringify({ content: delta })}\n\n`));
-                }
-              } catch { /* skip */ }
-            }
-          }
-
-          ctrl.enqueue(encoder.encode('data: [DONE]\n\n'));
-        } catch (err) {
-          ctrl.enqueue(encoder.encode(`data: ${JSON.stringify({ error: String(err) })}\n\n`));
-          ctrl.enqueue(encoder.encode('data: [DONE]\n\n'));
-        } finally {
-          ctrl.close();
-        }
-      },
-    });
-
-    return new Response(readable, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      },
+    return new Response(JSON.stringify({ content }), {
+      headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
     console.error('Parse constraint error:', err);

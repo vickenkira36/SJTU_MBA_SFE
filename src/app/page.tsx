@@ -18,6 +18,7 @@ export default function Home() {
   const [lockAssignments, setLockAssignments] = useState<LockAssignment[] | undefined>(undefined);
   const [regionConstraints, setRegionConstraints] = useState<RegionConstraintParams[] | undefined>(undefined);
   const [result, setResult] = useState<OptimizationResult | null>(null);
+  const [selectedProvinces, setSelectedProvincesState] = useState<string[] | undefined>(undefined);
   const [optimizingProgress, setOptimizingProgress] = useState<{
     current: number;
     total: number;
@@ -46,6 +47,7 @@ export default function Home() {
   const startOptimization = useCallback(
     (c: Constraint[], rc: RegionConstraintParams[] | undefined, mode: AlgorithmMode, selectedProvinces?: string[]) => {
       setStep('optimizing');
+      setSelectedProvincesState(selectedProvinces);
 
       // Filter data to selected provinces if specified
       const filteredHospitals = selectedProvinces
@@ -144,7 +146,7 @@ export default function Home() {
                 <h1 className="text-xl font-bold text-gray-900">FFE 辖区分配智能体</h1>
                 <p className="text-xs text-gray-500 mt-0.5">
                   FFE Territory Alignment Agent
-                  <span className="ml-2 text-gray-300">v20260428-0058</span>
+                  <span className="ml-2 text-gray-300">v20260514-2352</span>
                 </p>
               </div>
             </div>
@@ -240,6 +242,7 @@ export default function Home() {
             territories={territories}
             constraints={constraints}
             historicalAssignments={historicalAssignments}
+            selectedProvinces={selectedProvinces}
             onBack={handleBackToConstraints}
             onRestart={handleRestart}
           />

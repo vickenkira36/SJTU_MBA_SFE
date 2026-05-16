@@ -12,7 +12,8 @@ interface AlgoSelectProps {
 }
 
 export default function AlgoSelect({ onSelect, onBack, territories, hasHistoricalData }: AlgoSelectProps) {
-  const [selected, setSelected] = useState<AlgorithmMode>(hasHistoricalData ? 'option2' : 'option1');
+  // 固定使用 option2（两阶段法），不再让用户选择算法
+  const selected: AlgorithmMode = 'option2';
 
   // Province selector state
   const allProvinces = useMemo(() => {
@@ -78,83 +79,8 @@ export default function AlgoSelect({ onSelect, onBack, territories, hasHistorica
   return (
     <div className="max-w-2xl mx-auto mt-12">
       <div className="text-center mb-8">
-        <h2 className="text-xl font-bold text-gray-900">
-          {hasHistoricalData ? '选择优化算法' : '运行设置'}
-        </h2>
-        <p className="text-sm text-gray-500 mt-2">
-          {hasHistoricalData
-            ? '检测到已上传历史分配数据，请选择如何处理历史辖区关系'
-            : '选择要运行的省份，然后开始优化'}
-        </p>
+        <h2 className="text-xl font-bold text-gray-900">选择运行的省份</h2>
       </div>
-
-      {hasHistoricalData && <div className="space-y-4">
-        {options.map((opt) => (
-          <div
-            key={opt.mode}
-            onClick={() => setSelected(opt.mode)}
-            className={`relative p-5 rounded-xl border-2 cursor-pointer transition-all ${
-              selected === opt.mode
-                ? 'border-blue-500 bg-blue-50/50 shadow-md'
-                : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
-            }`}
-          >
-            {/* Radio indicator */}
-            <div className="absolute top-5 right-5">
-              <div
-                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                  selected === opt.mode ? 'border-blue-500' : 'border-gray-300'
-                }`}
-              >
-                {selected === opt.mode && (
-                  <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4 pr-8">
-              <div
-                className={`p-2.5 rounded-lg ${
-                  selected === opt.mode
-                    ? 'bg-blue-100 text-blue-600'
-                    : 'bg-gray-100 text-gray-500'
-                }`}
-              >
-                {opt.icon}
-              </div>
-              <div className="flex-1">
-                <h3 className="font-semibold text-gray-900">{opt.title}</h3>
-                <p className="text-sm text-gray-500 mt-0.5">{opt.subtitle}</p>
-
-                <div className="grid grid-cols-2 gap-4 mt-3">
-                  <div>
-                    <p className="text-xs font-medium text-green-700 mb-1">优势</p>
-                    <ul className="space-y-1">
-                      {opt.pros.map((p, i) => (
-                        <li key={i} className="text-xs text-gray-600 flex items-start gap-1.5">
-                          <span className="text-green-500 mt-0.5 shrink-0">+</span>
-                          {p}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-amber-700 mb-1">局限</p>
-                    <ul className="space-y-1">
-                      {opt.cons.map((c, i) => (
-                        <li key={i} className="text-xs text-gray-600 flex items-start gap-1.5">
-                          <span className="text-amber-500 mt-0.5 shrink-0">-</span>
-                          {c}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>}
 
       {/* Province selector */}
       {allProvinces.length > 1 && (

@@ -1,84 +1,56 @@
 digraph G {
     rankdir=TB;
-    fontname="Noto Sans CJK JP";
-    node [fontname="Noto Sans CJK JP", fontsize=10, shape=box, style="rounded,filled", penwidth=1.2];
-    edge [fontname="Noto Sans CJK JP", fontsize=9, color="#7f8c8d"];
+    dpi=300;
+    bgcolor="white";
+    fontname="Noto Sans CJK SC";
+    nodesep=0.4;
+    ranksep=0.6;
 
-    // Layer 1
-    subgraph cluster_layer1 {
-        label="Layer 1: 大医院独占与拆分份额分散";
-        labeljust=l;
-        fontname="Noto Sans CJK JP";
-        fontsize=12;
-        style="dashed";
-        color="#2c3e50";
-        bgcolor="#fef9e7";
+    node [fontname="Noto Sans CJK SC", fontsize=10, shape=box, style="filled", penwidth=1.0, color="black"];
+    edge [fontname="Noto Sans CJK SC", fontsize=9, color="black", penwidth=1.4, arrowsize=0.8];
 
-        l1_desc [label="Index ≥ 1000 的医院独立成簇\n拆分份额分散到不同簇", shape=plaintext, fontsize=9];
-        l1_h1a [label="医院A-份额1\n(Index=1000)", fillcolor="#e74c3c", fontcolor=white];
-        l1_h1b [label="医院A-份额2\n(Index=1000)", fillcolor="#e74c3c", fontcolor=white];
-        l1_h1c [label="医院A-份额3\n(Index=1000)", fillcolor="#e74c3c", fontcolor=white];
-        l1_h2a [label="医院B-份额1\n(Index=900)", fillcolor="#c0392b", fontcolor=white];
-        l1_h2b [label="医院B-份额2\n(Index=900)", fillcolor="#c0392b", fontcolor=white];
-        l1_rest [label="其余医院\n(待分配)", fillcolor="#bdc3c7"];
-        l1_note [label="医院A: 原始Index=3000\n→ 拆分为3份(各1000)\n医院B: 原始Index=1800\n→ 拆分为2份(各900)", shape=note, fillcolor="#fffde7", fontsize=8];
-    }
+    // 第一行：input → L1 → L2 → L3
+    input [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">输入</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">N 家虚拟医院</FONT></TD></TR></TABLE>>, fillcolor="#d8d8d8", fontcolor=black];
 
-    // Layer 2
-    subgraph cluster_layer2 {
-        label="Layer 2: 区县聚合";
-        labeljust=l;
-        fontname="Noto Sans CJK JP";
-        fontsize=12;
-        style="dashed";
-        color="#2c3e50";
-        bgcolor="#eaf2f8";
+    L1 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">Layer 1</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">大医院独占</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">+ 拆分分散</FONT></TD></TR></TABLE>>, fillcolor="#404040", fontcolor=white];
 
-        l2_desc [label="同区县未分配医院\n合并为一个簇", shape=plaintext, fontsize=9];
-        l2_c1 [label="浦东新区\n(12家, Index=2400)", fillcolor="#3498db", fontcolor=white];
-        l2_c2 [label="徐汇区\n(8家, Index=1600)", fillcolor="#3498db", fontcolor=white];
-        l2_c3 [label="黄浦区\n(5家, Index=800)", fillcolor="#3498db", fontcolor=white];
-    }
+    L2 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">Layer 2</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">区县聚合</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">idx ≥ 0.8 idx*</FONT></TD></TR></TABLE>>, fillcolor="#606060", fontcolor=white];
 
-    // Layer 3
-    subgraph cluster_layer3 {
-        label="Layer 3: 城市聚合";
-        labeljust=l;
-        fontname="Noto Sans CJK JP";
-        fontsize=12;
-        style="dashed";
-        color="#2c3e50";
-        bgcolor="#e8f8f5";
+    L3 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">Layer 3</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">城市聚合</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">一对一优先占slot</FONT></TD></TR></TABLE>>, fillcolor="#808080", fontcolor=white];
 
-        l3_desc [label="同城市的小簇合并\n(Index不足理想值的区县)", shape=plaintext, fontsize=9];
-        l3_c1 [label="上海-组1\n(浦东+黄浦, Index=3200)", fillcolor="#27ae60", fontcolor=white];
-        l3_c2 [label="上海-组2\n(徐汇, Index=1600)", fillcolor="#27ae60", fontcolor=white];
-    }
+    // 第二行：L4 → L5 → L6 → output（反向布局，但箭头视觉为正向）
+    L4 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">Layer 4</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">剩余城市收集</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">构建城市组</FONT></TD></TR></TABLE>>, fillcolor="#a0a0a0", fontcolor=white];
 
-    // Layer 4
-    subgraph cluster_layer4 {
-        label="Layer 4: 组合聚合";
-        labeljust=l;
-        fontname="Noto Sans CJK JP";
-        fontsize=12;
-        style="dashed";
-        color="#2c3e50";
-        bgcolor="#f5eef8";
+    L5 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">Layer 5</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">亲和图预合并</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">每城市仅 1 次</FONT></TD></TR></TABLE>>, fillcolor="#808080", fontcolor=white];
 
-        l4_desc [label="跨城市小簇贪心合并\n(亲和城市距离打0.3折)", shape=plaintext, fontsize=9];
-        l4_c1 [label="辖区1\n(上海-组1+苏州)", fillcolor="#8e44ad", fontcolor=white];
-        l4_c2 [label="辖区2\n(上海-组2+嘉兴)", fillcolor="#8e44ad", fontcolor=white];
-    }
+    L6 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">Layer 6</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">落单城市归属</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">按距离 + maxCities</FONT></TD></TR></TABLE>>, fillcolor="#606060", fontcolor=white];
 
-    // Edges
-    l1_rest -> l2_c1 [label="按区县\n归类"];
-    l1_rest -> l2_c2;
-    l1_rest -> l2_c3;
+    output [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">输出</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">K 个初始簇</FONT></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">→ SA 阶段</FONT></TD></TR></TABLE>>, fillcolor="#404040", fontcolor=white];
 
-    l2_c1 -> l3_c1 [label="合并\n小簇"];
-    l2_c3 -> l3_c1;
-    l2_c2 -> l3_c2;
+    // 强制两行：第一行 input/L1/L2/L3；第二行 output/L6/L5/L4（反向布局以实现 Z 字流向）
+    { rank=same; input; L1; L2; L3; }
+    { rank=same; output; L6; L5; L4; }
 
-    l3_c1 -> l4_c1 [label="跨城市\n贪心合并"];
-    l3_c2 -> l4_c2;
+    // 第一行流向（视觉左→右）
+    input -> L1 [weight=100];
+    L1 -> L2 [weight=100];
+    L2 -> L3 [weight=100];
+
+    // 跨行：L3（右上）→ L4（右下）
+    L3 -> L4;
+
+    // 第二行流向：layout 为 output(左)→L6→L5→L4(右)，视觉箭头反向
+    output -> L6 [dir=back, weight=100];
+    L6 -> L5 [dir=back, weight=100];
+    L5 -> L4 [dir=back, weight=100];
+
+    // 图注
+    caption [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2" CELLPADDING="4">
+            <TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="11">图 4-2    六层地理聚类示意图</FONT></B></TD></TR>
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">Figure 4-2  Six-Layer Geographic Clustering</FONT></TD></TR>
+        </TABLE>
+    >, shape=plaintext, style="", fillcolor=""];
+    { rank=sink; caption; }
+    L5 -> caption [style=invis];
 }
