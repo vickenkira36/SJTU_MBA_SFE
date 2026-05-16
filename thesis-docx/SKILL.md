@@ -13,20 +13,33 @@ description: >
 ## 核心命令
 
 ```bash
-pandoc docs/chapterXX.md -o docs/chapterXX.docx \
+pandoc docs/thesis.md -o docs/thesis.docx \
   --reference-doc=docs/antai-template.docx \
   --resource-path=docs \
-  --lua-filter=docs/superscript-cite.lua
+  --lua-filter=docs/superscript-cite.lua \
+  --citeproc \
+  --bibliography=docs/references.bib \
+  --csl=docs/gb-t-7714-2015-numeric.csl
 
 # 必须紧跟 post-process 步骤，否则表格列宽会按 pandoc 估算值固定，
 # 出现"窄列文字一字一断 + 单元格内容跨页拦腰切断"的视觉问题
-python3 docs/post_process_docx.py docs/chapterXX.docx
+python3 docs/post_process_docx.py docs/thesis.docx
 ```
 
-`post_process_docx.py` 会对 docx 中所有表格做三件事：
-1. **AutoFit to contents** — 让 Word 按内容自动分配列宽
-2. **cantSplit** — 行内容禁止跨页拆分
-3. **tblHeader** — 表头在每个分页自动重复
+参数说明：
+- `--reference-doc`：安泰格式模板，定义所有样式
+- `--lua-filter`：把正文 `[N]` 数字引用转上标
+- `--citeproc`：启用引用处理引擎（把 `[@key]` 替换为 `[N]` + 自动生成参考文献列表）
+- `--bibliography`：BibTeX 数据库文件，所有文献条目登记在此
+- `--csl`：GB/T 7714-2015 numeric 国标格式样式
+
+`post_process_docx.py` 会对 docx 中所有表格做六件事：
+1. 表格宽度 = 页面 100%
+2. AutoFit 按内容比例分配列宽
+3. 完整网格边框（每个单元格 6 条边都有黑色单线）
+4. cantSplit — 行内容禁止跨页拆分
+5. tblHeader — 表头在每个分页自动重复
+6. 清除单元格段落首行缩进（避免每行第一字缩进错位）
 
 ## 环境依赖
 

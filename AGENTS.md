@@ -27,22 +27,53 @@ git push
 
 ## Markdown 转 Word 标准命令
 
-每次生成 docx 时**必须**先 pandoc 再 post-process，两步都不能省：
+论文写作采用**单源单文件**模式：所有章节都写在 `docs/thesis.md` 一个文件里，文献用 BibTeX 管理。生成 docx 必须**先 pandoc 再 post-process**，两步都不能省：
 
 ```bash
-pandoc docs/chapterXX.md -o docs/chapterXX.docx \
+pandoc docs/thesis.md -o docs/thesis.docx \
   --reference-doc=docs/antai-template.docx \
   --lua-filter=docs/superscript-cite.lua \
   --resource-path=docs \
+  --citeproc \
+  --bibliography=docs/references.bib \
+  --csl=docs/gb-t-7714-2015-numeric.csl \
   -f markdown -t docx
 
-python3 docs/post_process_docx.py docs/chapterXX.docx
+python3 docs/post_process_docx.py docs/thesis.docx
 ```
 
 - `--reference-doc`：安泰格式模板，定义所有样式
 - `--lua-filter`：引用上标处理（正文中 `[N]` → 上标，参考文献列表中保持原样）
 - `--resource-path=docs`：**必须**，否则 markdown 中的图片路径（如 `figures/fig1-1.png`）无法解析
-- `post_process_docx.py`：**必须**，对所有表格设置 AutoFit + cantSplit + tblHeader，否则会出现"窄列文字一字一断"和"单元格内容跨页拦腰切断"的渲染问题
+- `--citeproc`：**必须**，启用 pandoc 引用引擎处理 `[@key]` 形式的引用
+- `--bibliography=docs/references.bib`：**必须**，BibTeX 文献数据库
+- `--csl=docs/gb-t-7714-2015-numeric.csl`：**必须**，GB/T 7714-2015 国标输出样式
+- `post_process_docx.py`：**必须**，对所有表格设置 AutoFit + cantSplit + tblHeader + 完整网格边框 + 取消首行缩进
+
+## 文献引用规则（BibTeX）
+
+**正文里写引用键，不写数字编号**：
+
+```markdown
+正确：Hess 和 Samuels (1971) 率先将线性规划应用于销售辖区划分 [@hess1971]。
+错误：Hess 和 Samuels (1971) 率先将线性规划应用于销售辖区划分 [6]。
+```
+
+**新增文献的两步流程**：
+
+1. 在 [docs/references.bib](docs/references.bib) 末尾追加一条 BibTeX 记录，按命名约定起一个唯一引用键（作者姓拼音/英文姓 + 年份，如 `wang2024`、`hess1971`）
+2. 在 thesis.md 正文需要引用的地方写 `[@key]`
+
+pandoc 的 citeproc 引擎会**自动**：
+- 把 `[@key]` 替换为 `[N]` 数字
+- 按全文首次出现顺序编号
+- 在末尾自动生成 GB/T 7714 格式的参考文献列表
+- 同一文献多处引用编号一致，未引用的文献不出现在列表里
+
+**禁止**：
+- 不要在 thesis.md 末尾手写参考文献条目（citeproc 会自动生成）
+- 不要在正文里写裸 `[N]` 数字引用
+- 不要在 references.bib 之外的地方维护文献列表
 
 ## 数学公式编号规则
 
