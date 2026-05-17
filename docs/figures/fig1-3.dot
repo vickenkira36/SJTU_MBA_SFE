@@ -1,0 +1,82 @@
+digraph G {
+    rankdir=TB;
+    dpi=300;
+    bgcolor="white";
+    fontname="Noto Sans CJK SC";
+    nodesep=0.4;
+    ranksep=0.5;
+
+    node [fontname="Noto Sans CJK SC", fontsize=10, shape=box, style="filled", penwidth=1.0, color="black"];
+    edge [fontname="Noto Sans CJK SC", fontsize=9, color="black", penwidth=1.4, arrowsize=0.7];
+
+    // ========== 阶段标签（左侧）==========
+    s1_label [label="一\n问题\n识别", shape=plaintext, fontsize=11, fillcolor=""];
+    s2_label [label="二\n方法\n选型", shape=plaintext, fontsize=11, fillcolor=""];
+    s3_label [label="三\n模型与\n算法构建", shape=plaintext, fontsize=11, fillcolor=""];
+    s4_label [label="四\n验证与\n应用", shape=plaintext, fontsize=11, fillcolor=""];
+
+    // ========== 阶段一：问题识别（2 节点）==========
+    bg [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">医药行业宏观环境</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">集采常态化 · 医保谈判 · 反腐深化</FONT></TD></TR></TABLE>>, fillcolor="#d8d8d8", fontcolor=black];
+
+    pain [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">辖区管理痛点</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">分配不公 · 响应滞后 · 数据闲置</FONT></TD></TR></TABLE>>, fillcolor="#a8a8a8", fontcolor=white];
+
+    // ========== 阶段二：方法选型（2 节点）==========
+    lit [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">文献综述</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">精确算法 → 启发式 → SFE 商业化</FONT></TD></TR></TABLE>>, fillcolor="#909090", fontcolor=white];
+
+    gap [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">研究缺口</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">中国医药 SFE 动态分配空白</FONT></TD></TR></TABLE>>, fillcolor="#707070", fontcolor=white];
+
+    // ========== 阶段三：模型与算法构建（3 节点 — 核心）==========
+    index [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">综合价值指数</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">省内份额归一 + 多维加权</FONT></TD></TR></TABLE>>, fillcolor="#505050", fontcolor=white];
+
+    cost [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">阈值惩罚代价函数</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">硬约束 + 软约束 + 二次惩罚</FONT></TD></TR></TABLE>>, fillcolor="#404040", fontcolor=white];
+
+    algo [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">两阶段求解算法</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">六层聚类 + SA + Hungarian</FONT></TD></TR></TABLE>>, fillcolor="#303030", fontcolor=white];
+
+    // ========== 阶段四：验证与应用（3 节点）==========
+    empirical [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">实证场景验证</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">As-Is vs To-Be · 三场景压力</FONT></TD></TR></TABLE>>, fillcolor="#a8a8a8", fontcolor=white];
+
+    biz [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">商业化评估</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">人机协同 · 变革管理 · 推广</FONT></TD></TR></TABLE>>, fillcolor="#888888", fontcolor=white];
+
+    conclusion [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">研究结论</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">理论贡献 + 实践价值 + 展望</FONT></TD></TR></TABLE>>, fillcolor="#404040", fontcolor=white];
+
+    // ========== 强制 4 阶段每行同 rank（横向布局）==========
+    { rank=same; s1_label; bg; pain; }
+    { rank=same; s2_label; lit; gap; }
+    { rank=same; s3_label; index; cost; algo; }
+    { rank=same; s4_label; empirical; biz; conclusion; }
+
+    // ========== 阶段标签到第一个节点（左对齐用）==========
+    s1_label -> bg [style=invis];
+    s2_label -> lit [style=invis];
+    s3_label -> index [style=invis];
+    s4_label -> empirical [style=invis];
+
+    // ========== 行内横向流向 ==========
+    bg -> pain [label="诊断"];
+    lit -> gap [label="批判"];
+    index -> cost [label="度量"];
+    cost -> algo [label="优化"];
+    empirical -> biz [label="转化"];
+    biz -> conclusion [label="提炼"];
+
+    // ========== 阶段间纵向跨越（关键流向）==========
+    pain -> lit [label="驱动"];
+    gap -> index [label="切入"];
+    algo -> empirical [label="检验"];
+
+    // ========== 阶段标签纵向连接（保证 rank 顺序）==========
+    s1_label -> s2_label [style=invis];
+    s2_label -> s3_label [style=invis];
+    s3_label -> s4_label [style=invis];
+
+    // ========== 图注 ==========
+    caption [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2" CELLPADDING="4">
+            <TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="11">图 1-1    本研究技术路线图</FONT></B></TD></TR>
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">Figure 1-1  Research Roadmap</FONT></TD></TR>
+        </TABLE>
+    >, shape=plaintext, style="", fillcolor=""];
+
+    { rank=sink; caption; }
+    biz -> caption [style=invis];
+}
