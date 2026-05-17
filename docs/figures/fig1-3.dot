@@ -4,79 +4,154 @@ digraph G {
     bgcolor="white";
     fontname="Noto Sans CJK SC";
     nodesep=0.4;
-    ranksep=0.5;
+    ranksep=0.18;
 
-    node [fontname="Noto Sans CJK SC", fontsize=10, shape=box, style="filled", penwidth=1.0, color="black"];
-    edge [fontname="Noto Sans CJK SC", fontsize=9, color="black", penwidth=1.4, arrowsize=0.7];
+    node [fontname="Noto Sans CJK SC", shape=none, margin="0"];
+    edge [color="black", penwidth=1.4, arrowsize=0.7];
 
-    // ========== 阶段标签（左侧）==========
-    s1_label [label="一\n问题\n识别", shape=plaintext, fontsize=11, fillcolor=""];
-    s2_label [label="二\n方法\n选型", shape=plaintext, fontsize=11, fillcolor=""];
-    s3_label [label="三\n模型与\n算法构建", shape=plaintext, fontsize=11, fillcolor=""];
-    s4_label [label="四\n验证与\n应用", shape=plaintext, fontsize=11, fillcolor=""];
+    // ========== 第一章 绪论 ==========
+    ch1 [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+            <TR><TD BORDER="1" BGCOLOR="black" CELLPADDING="5" WIDTH="480" ALIGN="CENTER">
+                <FONT COLOR="white" POINT-SIZE="11"><B>第一章    绪论</B></FONT>
+            </TD></TR>
+            <TR><TD CELLPADDING="2"></TD></TR>
+            <TR><TD>
+                <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="4" CELLPADDING="3">
+                    <TR>
+                        <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">研究背景与意义</FONT></TD>
+                        <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">研究内容与方法</FONT></TD>
+                        <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">论文结构与框架</FONT></TD>
+                    </TR>
+                </TABLE>
+            </TD></TR>
+        </TABLE>
+    >];
 
-    // ========== 阶段一：问题识别（2 节点）==========
-    bg [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">医药行业宏观环境</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">集采常态化 · 医保谈判 · 反腐深化</FONT></TD></TR></TABLE>>, fillcolor="#d8d8d8", fontcolor=black];
+    // ========== 第二章 文献综述 ==========
+    ch2 [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+            <TR><TD BORDER="1" BGCOLOR="black" CELLPADDING="5" WIDTH="480" ALIGN="CENTER">
+                <FONT COLOR="white" POINT-SIZE="11"><B>第二章    理论基础与文献综述</B></FONT>
+            </TD></TR>
+            <TR><TD CELLPADDING="2"></TD></TR>
+            <TR><TD>
+                <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="4" CELLPADDING="3">
+                    <TR>
+                        <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">SFE 管理理论</FONT></TD>
+                        <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">辖区分配算法演进</FONT></TD>
+                        <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">研究缺口与切入点</FONT></TD>
+                    </TR>
+                </TABLE>
+            </TD></TR>
+        </TABLE>
+    >];
 
-    pain [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">辖区管理痛点</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">分配不公 · 响应滞后 · 数据闲置</FONT></TD></TR></TABLE>>, fillcolor="#a8a8a8", fontcolor=white];
+    // ========== 第三章 现状诊断 ==========
+    ch3 [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+            <TR><TD BORDER="1" BGCOLOR="black" CELLPADDING="5" WIDTH="480" ALIGN="CENTER">
+                <FONT COLOR="white" POINT-SIZE="11"><B>第三章    制药企业 SFE 辖区管理现状与痛点诊断</B></FONT>
+            </TD></TR>
+            <TR><TD CELLPADDING="2"></TD></TR>
+            <TR><TD>
+                <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="4" CELLPADDING="3">
+                    <TR>
+                        <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">宏观政策环境分析</FONT></TD>
+                        <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">现行辖区管理模式</FONT></TD>
+                        <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">核心痛点与成因</FONT></TD>
+                    </TR>
+                </TABLE>
+            </TD></TR>
+        </TABLE>
+    >];
 
-    // ========== 阶段二：方法选型（2 节点）==========
-    lit [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">文献综述</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">精确算法 → 启发式 → SFE 商业化</FONT></TD></TR></TABLE>>, fillcolor="#909090", fontcolor=white];
+    // ========== 第四章 模型构建（核心，宽一点）==========
+    ch4 [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+            <TR><TD BORDER="1" BGCOLOR="black" CELLPADDING="5" WIDTH="480" ALIGN="CENTER">
+                <FONT COLOR="white" POINT-SIZE="11"><B>第四章    基于综合价值指数的智能辖区分配模型构建</B></FONT>
+            </TD></TR>
+            <TR><TD CELLPADDING="2"></TD></TR>
+            <TR><TD>
+                <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="4" CELLPADDING="3">
+                    <TR>
+                        <TD WIDTH="113" ALIGN="CENTER"><FONT POINT-SIZE="9">综合价值指数</FONT></TD>
+                        <TD WIDTH="113" ALIGN="CENTER"><FONT POINT-SIZE="9">大医院虚拟拆分</FONT></TD>
+                        <TD WIDTH="113" ALIGN="CENTER"><FONT POINT-SIZE="9">多目标优化模型</FONT></TD>
+                        <TD WIDTH="113" ALIGN="CENTER"><FONT POINT-SIZE="9">两阶段求解算法</FONT></TD>
+                    </TR>
+                </TABLE>
+            </TD></TR>
+        </TABLE>
+    >];
 
-    gap [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">研究缺口</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">中国医药 SFE 动态分配空白</FONT></TD></TR></TABLE>>, fillcolor="#707070", fontcolor=white];
+    // ========== 第五章 实证分析 ==========
+    ch5 [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+            <TR><TD BORDER="1" BGCOLOR="black" CELLPADDING="5" WIDTH="480" ALIGN="CENTER">
+                <FONT COLOR="white" POINT-SIZE="11"><B>第五章    实证分析与多场景模拟验证</B></FONT>
+            </TD></TR>
+            <TR><TD CELLPADDING="2"></TD></TR>
+            <TR><TD>
+                <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="4" CELLPADDING="3">
+                    <TR>
+                        <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">As-Is vs To-Be 对比</FONT></TD>
+                        <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">三场景压力测试</FONT></TD>
+                        <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">敏感性分析</FONT></TD>
+                    </TR>
+                </TABLE>
+            </TD></TR>
+        </TABLE>
+    >];
 
-    // ========== 阶段三：模型与算法构建（3 节点 — 核心）==========
-    index [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">综合价值指数</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">省内份额归一 + 多维加权</FONT></TD></TR></TABLE>>, fillcolor="#505050", fontcolor=white];
+    // ========== 第六章 商业化 ==========
+    ch6 [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+            <TR><TD BORDER="1" BGCOLOR="black" CELLPADDING="5" WIDTH="480" ALIGN="CENTER">
+                <FONT COLOR="white" POINT-SIZE="11"><B>第六章    企业内部管理配套及算法商业化前景评估</B></FONT>
+            </TD></TR>
+            <TR><TD CELLPADDING="2"></TD></TR>
+            <TR><TD>
+                <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="4" CELLPADDING="3">
+                    <TR>
+                        <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">人机协同决策机制</FONT></TD>
+                        <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">变革管理策略</FONT></TD>
+                        <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">商业价值评估</FONT></TD>
+                    </TR>
+                </TABLE>
+            </TD></TR>
+        </TABLE>
+    >];
 
-    cost [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">阈值惩罚代价函数</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">硬约束 + 软约束 + 二次惩罚</FONT></TD></TR></TABLE>>, fillcolor="#404040", fontcolor=white];
+    // ========== 第七章 结论与展望 ==========
+    ch7 [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+            <TR><TD BORDER="1" BGCOLOR="black" CELLPADDING="5" WIDTH="480" ALIGN="CENTER">
+                <FONT COLOR="white" POINT-SIZE="11"><B>第七章    结论与展望</B></FONT>
+            </TD></TR>
+            <TR><TD CELLPADDING="2"></TD></TR>
+            <TR><TD>
+                <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="4" CELLPADDING="3">
+                    <TR>
+                        <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">研究结论</FONT></TD>
+                        <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">研究创新点</FONT></TD>
+                        <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">不足与展望</FONT></TD>
+                    </TR>
+                </TABLE>
+            </TD></TR>
+        </TABLE>
+    >];
 
-    algo [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">两阶段求解算法</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">六层聚类 + SA + Hungarian</FONT></TD></TR></TABLE>>, fillcolor="#303030", fontcolor=white];
+    // 章间顺序连接（细线箭头）
+    ch1 -> ch2 -> ch3 -> ch4 -> ch5 -> ch6 -> ch7;
 
-    // ========== 阶段四：验证与应用（3 节点）==========
-    empirical [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">实证场景验证</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">As-Is vs To-Be · 三场景压力</FONT></TD></TR></TABLE>>, fillcolor="#a8a8a8", fontcolor=white];
-
-    biz [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">商业化评估</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">人机协同 · 变革管理 · 推广</FONT></TD></TR></TABLE>>, fillcolor="#888888", fontcolor=white];
-
-    conclusion [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3"><TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="10">研究结论</FONT></B></TD></TR><TR><TD ALIGN="CENTER"><FONT POINT-SIZE="9">理论贡献 + 实践价值 + 展望</FONT></TD></TR></TABLE>>, fillcolor="#404040", fontcolor=white];
-
-    // ========== 强制 4 阶段每行同 rank（横向布局）==========
-    { rank=same; s1_label; bg; pain; }
-    { rank=same; s2_label; lit; gap; }
-    { rank=same; s3_label; index; cost; algo; }
-    { rank=same; s4_label; empirical; biz; conclusion; }
-
-    // ========== 阶段标签到第一个节点（左对齐用）==========
-    s1_label -> bg [style=invis];
-    s2_label -> lit [style=invis];
-    s3_label -> index [style=invis];
-    s4_label -> empirical [style=invis];
-
-    // ========== 行内横向流向 ==========
-    bg -> pain [label="诊断"];
-    lit -> gap [label="批判"];
-    index -> cost [label="度量"];
-    cost -> algo [label="优化"];
-    empirical -> biz [label="转化"];
-    biz -> conclusion [label="提炼"];
-
-    // ========== 阶段间纵向跨越（关键流向）==========
-    pain -> lit [label="驱动"];
-    gap -> index [label="切入"];
-    algo -> empirical [label="检验"];
-
-    // ========== 阶段标签纵向连接（保证 rank 顺序）==========
-    s1_label -> s2_label [style=invis];
-    s2_label -> s3_label [style=invis];
-    s3_label -> s4_label [style=invis];
-
-    // ========== 图注 ==========
+    // 图注
     caption [label=<
         <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2" CELLPADDING="4">
-            <TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="11">图 1-1    本研究技术路线图</FONT></B></TD></TR>
-            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">Figure 1-1  Research Roadmap</FONT></TD></TR>
+            <TR><TD ALIGN="CENTER"><B><FONT POINT-SIZE="11">图 1-3    论文结构图</FONT></B></TD></TR>
+            <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="10">Figure 1-3  Structure of the Paper</FONT></TD></TR>
         </TABLE>
-    >, shape=plaintext, style="", fillcolor=""];
-
-    { rank=sink; caption; }
-    biz -> caption [style=invis];
+    >];
+    ch7 -> caption [style=invis];
 }
