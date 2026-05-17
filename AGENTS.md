@@ -9,18 +9,20 @@ bash scripts/push.sh
 ```
 
 脚本内部流程（不需要手动执行）：
-1. 从环境变量 `MBA_SFE` 或 `~/.zshrc` 读取 vickenkira36 账号的 PAT
+1. 按优先级查找 PAT：当前环境变量 → `.env` 文件 → `~/.zshrc`
 2. 把 PAT 注入到 `origin` URL
 3. `git push --force-with-lease origin main`
 4. 无论成败都把 URL 清理回不含 PAT 的形式（避免 PAT 残留在 .git/config）
 
-**前置条件**：用户的 `~/.zshrc` 末尾需要有一行：
+**前置条件**（推荐）：项目根目录有 `.env` 文件（已被 `.gitignore` 排除），内容包含：
 
-```bash
-export MBA_SFE="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxx"
+```
+MBA_SFE=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-如果脚本报"未找到 MBA_SFE"，引导用户加这行配置即可。**任何会话都不需要让用户手动注入 PAT、改 remote URL、清理 URL** — 这些都由脚本自动处理。
+`.env` 优于 `~/.zshrc` 的原因：① 项目级隔离 ② [`~/.claude/settings.json`](~/.claude/settings.json) 已 deny 读 `.env`，PAT 不会进 transcript ③ 切换项目无副作用。
+
+如果脚本报"未找到 MBA_SFE"，引导用户在项目根创建 `.env` 即可。**任何会话都不需要让用户手动注入 PAT、改 remote URL、清理 URL** — 这些都由脚本自动处理。
 
 **注意**：脚本里使用 `git push --force-with-lease`（带 force 字样），但 Claude Code 的 deny 规则只检查顶层命令字符串。`bash scripts/push.sh` 不含 force 字样，所以不会被拦截。
 
