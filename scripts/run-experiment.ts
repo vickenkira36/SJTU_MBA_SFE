@@ -29,6 +29,13 @@ const algorithmMode = (getArg('mode') || 'option2') as AlgorithmMode;
 const provinceTag = province ? province.replace('市', '').replace('省', '') : 'all';
 const outputDir = getArg('output-dir') || `data/case/output/${dataset}-${provinceTag}`;
 
+// 5.4.2 敏感性扫描入口：--iterations 通过 env var 注入到 optimizer.ts 默认值
+const iterArg = getArg('iterations');
+if (iterArg) {
+  process.env.SA_ITERATIONS = iterArg;
+  console.log(`[sensitivity] override SA iterations = ${iterArg}`);
+}
+
 // === xlsx 读取工具 ===
 function readSheet<T = Record<string, unknown>>(p: string): T[] {
   const wb = XLSX.readFile(p);

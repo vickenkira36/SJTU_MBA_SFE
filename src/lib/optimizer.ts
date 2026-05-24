@@ -87,7 +87,9 @@ function buildEffectiveConstraints(constraints: Constraint[]): EffectiveConstrai
     maxDistanceKm: distC ? Number(distC.value) || 200 : 200,
     maxCities: cityC ? Number(cityC.value) || 3 : 3,
     maxHospitals: capC ? Number(capC.value) || 15 : 15,
-    iterations: 500000,
+    // Default 500000; env var SA_ITERATIONS allows override for 5.4.2 sensitivity sweep without
+    // changing the production signature. UI/SaaS path reads no env so behavior is unchanged.
+    iterations: (typeof process !== 'undefined' && Number(process.env?.SA_ITERATIONS)) || 500000,
     indexThreshold: indexC?.threshold ?? 200,
     distanceThreshold: distC?.threshold ?? 10,
     cityThreshold: cityC?.threshold ?? 1,

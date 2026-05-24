@@ -1,6 +1,9 @@
 """
-第五章图表生成脚本（图 5-1 至 图 5-4）
-数据来源：data/case/output/{bc-上海, bc-湖南, bc-新疆维吾尔自治区}/{result, metrics}.json
+第五章图表生成脚本（图 5-1 至 图 5-5）
+数据来源：
+  - 图 5-1/5-2/5-3: data/case/output/bc-湖南/{result, metrics}.json
+  - 图 5-4:        data/case/output/bc-{上海,湖南,新疆维吾尔自治区}/result.json
+  - 图 5-5:        data/case/output/sensitivity/summary.json
 所有图统一字体 Noto Sans CJK SC + 物理宽度约 15 cm + DPI 自适应。
 """
 import json
@@ -316,9 +319,84 @@ def fig_5_4():
     print('Saved fig5-4.png')
 
 
+def fig_5_5():
+    """图 5-5 SA 迭代次数敏感性扫描（5.4.2 节）"""
+    with open(f'{DATA}/sensitivity/summary.json') as f:
+        rows = json.load(f)
+
+    # 按省份分组并排序
+    by_prov = {}
+    for r in rows:
+        by_prov.setdefault(r['province'], []).append(r)
+    for prov in by_prov:
+        by_prov[prov].sort(key=lambda x: x['iterations'])
+
+    color_map = {'上海': BLUE, '湖南': DARK, '新疆': RED}
+    iter_ticks = [100, 300, 500, 1000]
+    iter_labels = ['100K', '300K', '500K\n（默认）', '1M']
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+
+    # 子图 1：To-Be CV vs 迭代次数（含 As-Is 参考线）
+    ax = axes[0]
+    for prov, rs in by_prov.items():
+        iters = [r['iterations'] / 1000 for r in rs]
+        cvs = [r['to_be_cv_pct'] for r in rs]
+        ax.plot(iters, cvs, marker='o', linewidth=1.6, markersize=7,
+                color=color_map[prov], label=f'{prov} BC')
+        as_is_cv = rs[0]['as_is_cv_pct']
+        ax.axhline(as_is_cv, color=color_map[prov], linestyle=':',
+                   linewidth=0.7, alpha=0.45)
+        ax.text(1080, as_is_cv, f'As-Is {as_is_cv:.1f}%',
+                fontsize=8, color=color_map[prov], va='center')
+    ax.set_xscale('log')
+    ax.set_xticks(iter_ticks)
+    ax.set_xticklabels(iter_labels, fontsize=9)
+    ax.set_xlabel('SA 迭代次数（对数刻度）', fontsize=10.5)
+    ax.set_ylabel('To-Be CV (%)', fontsize=10.5)
+    ax.set_title('SA 迭代次数 vs To-Be CV', fontsize=11, pad=6)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.grid(True, linestyle=':', alpha=0.3)
+    ax.set_axisbelow(True)
+    ax.legend(loc='upper right', frameon=False, fontsize=9)
+    ax.set_xlim(80, 1400)
+
+    # 子图 2：CV 改善幅度 vs 迭代次数
+    ax = axes[1]
+    for prov, rs in by_prov.items():
+        iters = [r['iterations'] / 1000 for r in rs]
+        imps = [r['cv_improvement_pct'] for r in rs]
+        ax.plot(iters, imps, marker='o', linewidth=1.6, markersize=7,
+                color=color_map[prov], label=f'{prov} BC')
+    ax.axhline(0, color='black', linewidth=0.5)
+    ax.set_xscale('log')
+    ax.set_xticks(iter_ticks)
+    ax.set_xticklabels(iter_labels, fontsize=9)
+    ax.set_xlabel('SA 迭代次数（对数刻度）', fontsize=10.5)
+    ax.set_ylabel('CV 改善幅度 (%)', fontsize=10.5)
+    ax.set_title('SA 迭代次数 vs CV 改善幅度', fontsize=11, pad=6)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.grid(True, linestyle=':', alpha=0.3)
+    ax.set_axisbelow(True)
+    ax.legend(loc='center right', frameon=False, fontsize=9)
+    ax.set_xlim(80, 1400)
+
+    fig.text(0.5, 0.01,
+             '图 5-5    SA 迭代次数对 To-Be CV 与改善幅度的敏感性扫描',
+             ha='center', fontsize=11, fontweight='bold')
+    plt.tight_layout(rect=[0, 0.04, 1, 1])
+    plt.savefig(f'{OUT}/fig5-5.png', dpi=200,
+                bbox_inches='tight', facecolor='white')
+    plt.close()
+    print('Saved fig5-5.png')
+
+
 if __name__ == '__main__':
     fig_5_1()
     fig_5_2()
     fig_5_3()
     fig_5_4()
-    print('\nAll 4 figures generated.')
+    fig_5_5()
+    print('\nAll 5 figures generated.')
