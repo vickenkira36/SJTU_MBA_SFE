@@ -22,8 +22,8 @@ digraph G {
         bgcolor="#eaf2f8";
         margin="8";
 
-        clustering [label="四层地理聚类\nL1大医院独占 → L2区县 → L3城市 → L4组合合并\n+ Maximin种子选择"];
-        sa [label="模拟退火优化 (300,000次迭代)\nMove 60% / Swap 40% | Metropolis准则", fillcolor="#d5e8d4"];
+        clustering [label="六层地理聚类\nL1大医院独占 → L2区县 → L3城市 → L4剩余收集\n→ L5亲和预合并 → L6落单归属 + Maximin种子选择"];
+        sa [label="模拟退火优化 (500,000次迭代)\nMove 60% / Swap 40%", fillcolor="#d5e8d4"];
         note1 [label="代价函数不含\n历史惩罚项", shape=note, fillcolor="#fdebd0", fontsize=8];
     }
 

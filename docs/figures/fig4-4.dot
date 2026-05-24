@@ -14,10 +14,10 @@ digraph G {
         color="#2980b9";
         bgcolor="#eaf2f8";
 
-        c1 [label="簇 A\nIndex=102", shape=circle, style=filled, fillcolor="#3498db", fontcolor=white, width=1.0];
-        c2 [label="簇 B\nIndex=98", shape=circle, style=filled, fillcolor="#3498db", fontcolor=white, width=1.0];
-        c3 [label="簇 C\nIndex=105", shape=circle, style=filled, fillcolor="#3498db", fontcolor=white, width=1.0];
-        c4 [label="簇 D\nIndex=95", shape=circle, style=filled, fillcolor="#3498db", fontcolor=white, width=1.0];
+        c1 [label="簇 A\nIndex=1020", shape=circle, style=filled, fillcolor="#3498db", fontcolor=white, width=1.0];
+        c2 [label="簇 B\nIndex=980", shape=circle, style=filled, fillcolor="#3498db", fontcolor=white, width=1.0];
+        c3 [label="簇 C\nIndex=1050", shape=circle, style=filled, fillcolor="#3498db", fontcolor=white, width=1.0];
+        c4 [label="簇 D\nIndex=950", shape=circle, style=filled, fillcolor="#3498db", fontcolor=white, width=1.0];
     }
 
     // Weight matrix (middle)
