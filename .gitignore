@@ -43,3 +43,6 @@ next-env.d.ts
 # Word/Excel 临时锁文件
 ~$*
 .~lock.*
+
+# 第五章实证数据（脱敏业务数据 + hco-master，含敏感信息）
+/data/case/
