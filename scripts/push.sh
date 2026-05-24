@@ -19,10 +19,19 @@
 set -e
 
 # === 1. 加载 PAT ===
+#
+# 优先级（重要）：
+#   1. 项目根目录 .env  ← 优先用项目本地的最新 token
+#   2. ~/.zshrc        ← 兜底（仅在 .env 不存在或不含 MBA_SFE 时才用）
+#
+# 注意：**故意不读 shell 当前环境变量**——避免 ~/.zshrc 里残留的旧 token
+# 自动 export 后覆盖 .env 里的新 token（这是真实踩过的坑）。所以我们先 unset
+# 当前环境，再按 .env → ~/.zshrc 顺序加载。
 
-# 优先级 1: 当前环境变量（如果已经 export）
-# 优先级 2: 项目根目录 .env 文件
-if [ -z "$MBA_SFE" ] && [ -f .env ]; then
+unset MBA_SFE
+
+# 优先级 1: 项目根目录 .env 文件（最权威）
+if [ -f .env ]; then
     MBA_SFE_LINE=$(grep -E '^MBA_SFE=' .env | head -1 || true)
     if [ -n "$MBA_SFE_LINE" ]; then
         # 去掉 MBA_SFE= 前缀和可选的引号
@@ -31,7 +40,7 @@ if [ -z "$MBA_SFE" ] && [ -f .env ]; then
     fi
 fi
 
-# 优先级 3: ~/.zshrc
+# 优先级 2: ~/.zshrc（仅当 .env 没有）
 if [ -z "$MBA_SFE" ]; then
     MBA_SFE_LINE=$(grep -E '^export MBA_SFE=' "$HOME/.zshrc" 2>/dev/null | head -1 || true)
     if [ -n "$MBA_SFE_LINE" ]; then
@@ -44,8 +53,6 @@ if [ -z "$MBA_SFE" ]; then
     echo ""
     echo "请在项目根目录创建 .env 文件（已被 .gitignore 排除），添加一行："
     echo "  MBA_SFE=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxx"
-    echo ""
-    echo "或者在 ~/.zshrc 里：export MBA_SFE=\"...\""
     exit 1
 fi
 
