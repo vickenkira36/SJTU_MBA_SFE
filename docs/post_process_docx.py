@@ -135,6 +135,21 @@ def post_process(docx_path: str) -> int:
     return n_tables
 
 
+# Note: 4-level headings (####) and figure captions show a tiny square mark
+# in Word's Print Layout view, in front of the paragraph. This is NOT a bullet
+# point — it's Word's "Paragraph Property Indicator", shown when a paragraph
+# has the `<w:keepNext/>` attribute (meaning "do not split from next paragraph
+# across pages"). The Heading4 style and CaptionedFigure style in
+# docs/antai-template.docx both define keepNext, so the mark appears.
+#
+# This indicator only shows in Word's editing view and does NOT appear in
+# print or PDF export. To hide it during editing, turn off Word's "Show
+# formatting marks" (Home → ¶ button, or Preferences → View → uncheck All).
+#
+# We do NOT strip keepNext from the styles, because removing it would cause
+# unwanted page breaks between headings/captions and their following content.
+
+
 if __name__ == '__main__':
     for path in sys.argv[1:]:
         n = post_process(path)
