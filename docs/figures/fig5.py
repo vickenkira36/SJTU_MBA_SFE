@@ -241,9 +241,9 @@ def fig_5_3():
     bars = ax.bar(metrics_cats, metric_vals, color=[LIGHT, BLUE], edgecolor='white', linewidth=1, width=0.5)
     for bar, v in zip(bars, metric_vals):
         ax.text(bar.get_x() + bar.get_width()/2, v + 1.5, f'{v}%', ha='center', va='bottom', fontsize=11, fontweight='bold')
-    # 业务可接受线 85%
-    ax.axhline(85, color=RED, linestyle='--', linewidth=1, alpha=0.6)
-    ax.text(1.4, 86, '业务可接受线 85%\n(3.3.3 节 D2 调研)', fontsize=8.5, color=RED, ha='right')
+    # G1 调研中受访者偏好的"高保留率方案"对应 92% 保留率（67% 受访者选择）
+    ax.axhline(92, color=RED, linestyle='--', linewidth=1, alpha=0.6)
+    ax.text(1.4, 93, 'G1 调研偏好方案 92%\n(67% 受访者选择)', fontsize=8.5, color=RED, ha='right')
     ax.set_ylabel('保留率 (%)', fontsize=11)
     ax.set_ylim(0, 100)
     ax.set_title('保留率：两种计算口径对比', fontsize=11, pad=8)

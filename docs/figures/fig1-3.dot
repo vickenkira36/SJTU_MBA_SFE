@@ -97,7 +97,7 @@ digraph G {
                 <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="4" CELLPADDING="3">
                     <TR>
                         <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">As-Is vs To-Be 对比</FONT></TD>
-                        <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">三场景压力测试</FONT></TD>
+                        <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">三地理形态验证</FONT></TD>
                         <TD WIDTH="150" ALIGN="CENTER"><FONT POINT-SIZE="9">敏感性分析</FONT></TD>
                     </TR>
                 </TABLE>
