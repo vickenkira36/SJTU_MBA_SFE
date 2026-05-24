@@ -1,0 +1,78 @@
+digraph G {
+    rankdir=TB;
+    fontname="Noto Sans CJK JP";
+    ranksep=0.35;
+    nodesep=0.3;
+    node [fontname="Noto Sans CJK JP", fontsize=9, shape=box, style="rounded,filled", fillcolor="#f0f0f0", color="#2c3e50", penwidth=1.2, height=0.4, margin="0.08,0.04"];
+    edge [fontname="Noto Sans CJK JP", fontsize=8, color="#7f8c8d"];
+
+    // Input
+    input [label="输入\n(医院清单、辖区配置、历史分配、业务约束)", fillcolor="#dfe6e9"];
+
+    // Stage 1: 算法生成基线
+    subgraph cluster_stage1 {
+        label="阶段一：算法生成基线方案（中央 SFE 团队）";
+        labeljust=l;
+        fontname="Noto Sans CJK JP";
+        fontsize=10;
+        style="dashed";
+        color="#2980b9";
+        bgcolor="#eaf2f8";
+        margin="8";
+
+        s1_run [label="按默认参数跑算法\n(SA 500K + Hungarian 三层权重)"];
+        s1_out [label="输出 To-Be 初稿\n(匿名簇 + 历史匹配 + 因子归因)", fillcolor="#d5e8d4"];
+        s1_note [label="技术驱动\n秒级响应", shape=note, fillcolor="#fdebd0", fontsize=8];
+    }
+
+    // Stage 2: 业务侧微调（人在回路）
+    subgraph cluster_stage2 {
+        label="阶段二：业务侧解读与微调（大区 / 地区经理）";
+        labeljust=l;
+        fontname="Noto Sans CJK JP";
+        fontsize=10;
+        style="dashed";
+        color="#e67e22";
+        bgcolor="#fef5e7";
+        margin="8";
+
+        s2_review [label="审阅 To-Be 与因子归因\n识别需调整的医院 / 辖区"];
+        s2_constraint [label="施加约束修改\n(锁定 / 虚拟拆分 / 区域排他)"];
+        s2_rerun [label="算法重跑（秒级迭代）\n收敛前可多轮", fillcolor="#fadbd8"];
+        s2_note [label="业务驱动\n人在回路", shape=note, fillcolor="#fdebd0", fontsize=8];
+    }
+
+    // Stage 3: 系统锁定与回写
+    subgraph cluster_stage3 {
+        label="阶段三：系统锁定与回写（合规与审计）";
+        labeljust=l;
+        fontname="Noto Sans CJK JP";
+        fontsize=10;
+        style="dashed";
+        color="#27ae60";
+        bgcolor="#eafaf1";
+        margin="8";
+
+        s3_lock [label="方案锁定为正式版本\n(签字 / 审批流程)"];
+        s3_writeback [label="回写至 CRM / SFA 系统\n触发后续业务流程"];
+        s3_audit [label="输入参数 + 算法版本 + 输出三元组留痕", fillcolor="#d5f5e3"];
+        s3_note [label="合规驱动\n审计留痕", shape=note, fillcolor="#fdebd0", fontsize=8];
+    }
+
+    // Output
+    output [label="最终辖区分配方案\n（业务侧确认 + 系统留痕）", fillcolor="#d5f5e3"];
+
+    // Edges
+    input -> s1_run;
+    s1_run -> s1_out -> s2_review;
+    s2_review -> s2_constraint -> s2_rerun;
+    s2_rerun -> s2_review [label="未收敛", style=dashed, constraint=false];
+    s2_rerun -> s3_lock [label="收敛"];
+    s3_lock -> s3_writeback -> s3_audit;
+    s3_audit -> output;
+
+    // Side notes
+    s1_out -> s1_note [style=dotted, arrowhead=none];
+    s2_rerun -> s2_note [style=dotted, arrowhead=none];
+    s3_audit -> s3_note [style=dotted, arrowhead=none];
+}
