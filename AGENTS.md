@@ -44,7 +44,13 @@ MBA_SFE=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ## Markdown 转 Word 标准命令
 
-论文写作采用**单源单文件**模式：所有章节都写在 `docs/thesis.md` 一个文件里，文献用 BibTeX 管理。生成 docx 必须**先 pandoc 再 post-process**，两步都不能省：
+论文写作采用**单源单文件**模式：所有章节都写在 `docs/thesis.md` 一个文件里，文献用 BibTeX 管理。生成 docx 已封装为 [`scripts/build-docx.sh`](scripts/build-docx.sh)：
+
+```bash
+bash scripts/build-docx.sh
+```
+
+脚本内部依次执行：
 
 ```bash
 pandoc docs/thesis.md -o docs/thesis.docx \
@@ -66,6 +72,40 @@ python3 docs/post_process_docx.py docs/thesis.docx
 - `--bibliography=docs/references.bib`：**必须**，BibTeX 文献数据库
 - `--csl=docs/gb-t-7714-2015-numeric.csl`：**必须**，GB/T 7714-2015 国标输出样式
 - `post_process_docx.py`：**必须**，对所有表格设置 AutoFit + cantSplit + tblHeader + 完整网格边框 + 取消首行缩进
+
+## docx 反向同步流程（双向工作流）
+
+用户会在 `docs/thesis.docx` 里直接做手工编辑（改字、调段、修表格）。如果智能体重跑 pandoc 而不先同步这些改动，就会把用户的改动覆盖掉。**任何对 thesis.md 的改动开始之前，必须先跑同步脚本检查 docx 端是否有未同步的修改**：
+
+```bash
+bash scripts/sync-from-docx.sh
+```
+
+脚本流程：
+
+1. 反向 pandoc：`docs/thesis.docx` → `/tmp/thesis-from-docx.md`
+2. 对两边 md 做"已知格式噪声"标准化（把 `——`/`---`、引用上标、图片属性、表格分隔行等 pandoc 反向产物清洗掉）
+3. 输出 `/tmp/thesis-sync.diff`，内容是过滤后的实质差异
+
+智能体随后的工作：
+
+1. `Read /tmp/thesis-sync.diff`，**人在回路**判断哪些是用户的实质改动（vs 残留的格式噪声）
+2. 用 `Edit` 工具把这些实质改动 patch 回 `docs/thesis.md`
+3. 完成自己本次新的改动
+4. 跑 `bash scripts/build-docx.sh` 重新生成 docx，确认所有改动都被合并
+
+**何时需要跑 sync？**
+
+- 当用户描述意图涉及 thesis.md / thesis.docx 的进一步编辑时
+- 当时间戳显示 `docs/thesis.docx` 比 `docs/thesis.md` 还新时（通常意味着 docx 端有改动）
+- 当用户明确说"我刚在 Word 里改了"
+
+**何时可以跳过？**
+
+- 用户刚刚通过对话明确告诉智能体改动内容（这种情况下 thesis.md 就是最新源头，docx 端没有未同步改动）
+- 仅做 markdown 不可表达的样式调整（字体、行距、页边距）——这类只能改 `docs/antai-template.docx`，不进入同步流程
+
+**sync 脚本无法捕获的改动**：markdown 不表达字体、字号、行间距等纯样式信息；如需统一样式，请改 `docs/antai-template.docx`，而不是在每份 docx 里反复手动调。
 
 ## 单源写作模式与归档机制
 
