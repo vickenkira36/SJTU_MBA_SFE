@@ -38,18 +38,16 @@ HILITE = '#1F4E79'     # 强调色（深蓝），用于标注论文取值
 def fig_34():
     fig, ax = plt.subplots(figsize=(9, 4.8))
 
-    # 5 个维度，每行总数 12
+    # 4 个维度，每行总数 12（自下向上：角色 → 年限 → 企业类型 → 销售人员规模）
     rows = [
-        ('辖区数量经验', ['1-3 个', '4-10 个', '11-30 个', '>30 个'],
-         [2, 5, 4, 1]),
-        ('产品线', ['处方专科', '处方普药', 'OTC', '多产品线'],
-         [5, 4, 1, 2]),
+        ('销售人员规模', ['<200 人', '200-500 人', '500-1000 人', '>1000 人'],
+         [2, 3, 3, 4]),
         ('企业类型', ['跨国', '国内大型', '国内中小'],
          [6, 4, 2]),
         ('工作年限', ['<3 年', '3-5 年', '5-10 年', '>10 年'],
          [1, 4, 5, 2]),
-        ('角色', ['销售管理者', '一线代表', 'SFE 分析师', '咨询顾问'],
-         [3, 4, 3, 2]),
+        ('角色', ['SFE 管理层', '销售管理者', 'SFE 分析师'],
+         [3, 4, 5]),
     ]
 
     y_pos = np.arange(len(rows))
@@ -86,10 +84,9 @@ def fig_34():
 
 # === 图 3-5 Index 维度入选率与赋权均值双层条形图 ===
 def fig_35():
-    dims = ['销量', '潜力', 'HCP\n数量', '医院\n市场份额', '医院\n等级',
-            '客户\n级别', '地理\n可达性', '产品\n矩阵', '其他']
-    sel_rate = [92, 83, 58, 50, 42, 33, 25, 17, 0]    # B1 入选率（%）
-    weight_avg = [52, 32, 10, 5, 1, 0, 0, 0, 0]        # B2 被勾选条件下平均权重（%）
+    dims = ['销量', '潜力', 'HCP\n数量', '医院\n市场份额', '其他']
+    sel_rate = [92, 83, 58, 50, 8]                    # B1 入选率（%）
+    weight_avg = [52, 32, 10, 5, 1]                    # B2 被勾选条件下平均权重（%）
 
     x = np.arange(len(dims))
     width = 0.38
@@ -275,8 +272,8 @@ def fig_39():
     print('Saved fig3-9.png')
 
 
-# === 图 3-11 G1 三组成对比较结果 ===
-def fig_311():
+# === 图 3-10 G1 三组成对比较结果 ===
+def fig_310():
     pairs = [
         ('Index 完美均衡 vs\n客户保留率 92%', 33, 67),
         ('地理跨度大 vs\n紧凑度优先', 42, 58),
@@ -313,65 +310,7 @@ def fig_311():
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 
-    fig.text(0.5, 0.01, '图 3-11    G1 三组成对比较结果',
-             ha='center', fontsize=11, fontweight='bold')
-    plt.tight_layout(rect=[0, 0.05, 1, 1])
-    plt.savefig(f'{OUT}/fig3-11.png', dpi=DPI, bbox_inches='tight',
-                facecolor='white')
-    plt.close()
-    print('Saved fig3-11.png')
-
-
-# === 图 3-10 客户关系差异化保护程度（E1）===
-def fig_310():
-    relations = ['一线代表与 KOL 客户',
-                 '重点大医院（前 10%）',
-                 '一对一城市（历史独占）',
-                 '同辖区非 KOL 普通客户',
-                 '中等 Index 普通医院',
-                 '跨多辖区城市内医院']
-    means = [4.7, 4.6, 4.5, 3.4, 3.2, 3.0]
-    # 前 3 项深色（必须保护层），后 3 项浅色（可调整层）
-    colors = [EMPHASIS, EMPHASIS, EMPHASIS, LIGHT, LIGHT, LIGHT]
-
-    y_pos = np.arange(len(relations))[::-1]   # 从上到下：高分在上
-
-    fig, ax = plt.subplots(figsize=(9.5, 4.8))
-
-    bars = ax.barh(y_pos, means, height=0.6, color=colors,
-                   edgecolor='white', linewidth=0.8)
-
-    for bar, val in zip(bars, means):
-        ax.text(val + 0.05, bar.get_y() + bar.get_height()/2,
-                f'{val:.1f}', ha='left', va='center', fontsize=10,
-                fontweight='bold')
-
-    ax.set_yticks(y_pos)
-    ax.set_yticklabels(relations, fontsize=10)
-    ax.set_xlim(0, 5.4)
-    ax.set_xlabel('必须保护程度均值（5 分制）', fontsize=11)
-    ax.set_xticks([0, 1, 2, 3, 4, 5])
-
-    # 分层参考线（4.5 处）
-    ax.axvline(x=4.5, color='gray', linestyle=':', linewidth=1, alpha=0.6)
-    ax.text(4.5, len(relations) - 0.3, '4.5 分层线', ha='center',
-            va='bottom', fontsize=8, color='gray')
-
-    # 图例
-    from matplotlib.patches import Patch
-    legend_elements = [
-        Patch(facecolor=EMPHASIS, label='必须保护层（均值 ≥ 4.5）'),
-        Patch(facecolor=LIGHT, label='可调整层（均值 3.0-3.4）'),
-    ]
-    ax.legend(handles=legend_elements, loc='lower right',
-              frameon=False, fontsize=10)
-
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.grid(True, axis='x', linestyle='--', alpha=0.3, color='gray')
-    ax.set_axisbelow(True)
-
-    fig.text(0.5, 0.01, '图 3-10    客户关系差异化保护程度均值（E1）',
+    fig.text(0.5, 0.01, '图 3-10    G1 三组成对比较结果',
              ha='center', fontsize=11, fontweight='bold')
     plt.tight_layout(rect=[0, 0.05, 1, 1])
     plt.savefig(f'{OUT}/fig3-10.png', dpi=DPI, bbox_inches='tight',
@@ -387,6 +326,5 @@ if __name__ == '__main__':
     fig_37()
     fig_38()
     fig_39()
-    fig_311()
     fig_310()
-    print('\nAll 8 figures generated.')
+    print('\nAll 7 figures generated.')
