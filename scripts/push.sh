@@ -55,6 +55,12 @@ git remote set-url origin "$REPO_URL"
 
 # === 3. push（默认 main 分支，可通过参数覆盖）===
 BRANCH="${1:-main}"
+
+# 先 fetch 一下远端最新状态，避免 --force-with-lease 因本地 ref 过期
+# 报 "stale info" 错误。若 fetch 失败（比如远端无该分支）不致命。
+echo "→ 同步远端 ref ..."
+git fetch origin "$BRANCH" 2>/dev/null || true
+
 echo "→ 正在推送到 origin/$BRANCH ..."
 PUSH_OK=0
 git push --force-with-lease origin "$BRANCH" || PUSH_OK=$?
