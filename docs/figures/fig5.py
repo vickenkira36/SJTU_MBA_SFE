@@ -1,6 +1,6 @@
 """
-第五章图表生成脚本（图 5-1 至 图 5-6）
-数据来源：data/case/output/{bc-上海, bc-湖北, lc-云南}/{result, metrics}.json
+第五章图表生成脚本（图 5-1 至 图 5-4）
+数据来源：data/case/output/{bc-上海, bc-湖南, bc-新疆维吾尔自治区}/{result, metrics}.json
 所有图统一字体 Noto Sans CJK SC + 物理宽度约 15 cm + DPI 自适应。
 """
 import json
@@ -259,76 +259,8 @@ def fig_5_3():
     print('Saved fig5-3.png')
 
 
-def _province_map(province_key, fig_num, title):
-    """通用：辖区地图（医院点位 + 颜色编码辖区归属）"""
-    result, as_is, metrics = load_data(province_key)
-
-    # 收集医院的位置 + As-Is/To-Be 辖区
-    hosp_meta = {}
-    for tr in result['territoryResults']:
-        for h in tr['hospitals']:
-            ic = h['inscode']
-            if ic not in hosp_meta:
-                hosp_meta[ic] = {'lat': h['latitude'], 'lon': h['longitude']}
-
-    asis_assign = {}
-    for ha in as_is['historical']:
-        if ha['inscode'] in hosp_meta:
-            # 单医院多个辖区时，取第一个
-            asis_assign.setdefault(ha['inscode'], ha['trtyCode'])
-
-    tobe_assign = {}
-    for tr in result['territoryResults']:
-        for h in tr['hospitals']:
-            tobe_assign.setdefault(h['inscode'], tr['trtyCode'])
-
-    fig, axes = plt.subplots(1, 2, figsize=(11, 5.5))
-
-    # 一致地给 trtyCode 染色（用 tab20 或循环色）
-    all_trty = sorted(set(asis_assign.values()) | set(tobe_assign.values()))
-    cmap = plt.cm.tab20
-    color_map = {t: cmap(i % 20) for i, t in enumerate(all_trty)}
-
-    for ax, assign, sub in zip(axes, [asis_assign, tobe_assign], ['As-Is（人工分配）', 'To-Be（算法优化）']):
-        for ic, t in assign.items():
-            if ic not in hosp_meta:
-                continue
-            m = hosp_meta[ic]
-            if not m['lat'] or not m['lon']:
-                continue
-            ax.scatter(m['lon'], m['lat'], s=22, color=color_map[t], edgecolor='white', linewidth=0.4, alpha=0.85)
-        ax.set_xlabel('经度', fontsize=10)
-        ax.set_ylabel('纬度', fontsize=10)
-        ax.set_title(sub, fontsize=11, pad=6)
-        ax.set_aspect('equal', adjustable='datalim')
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.grid(True, linestyle=':', alpha=0.3)
-
-    # 添加规模注解
-    n_h = result['meta']['hospitalsCount']
-    n_t = result['meta']['territoriesCount']
-    fig.text(0.5, 0.92, f'{title}（{n_h} 家医院 / {n_t} 个辖区，颜色按辖区归属编码）',
-             ha='center', fontsize=10, color='gray')
-
-    fig.text(0.5, 0.02, f'图 5-{fig_num}    {title}：辖区分布 As-Is vs To-Be',
-             ha='center', fontsize=11, fontweight='bold')
-    plt.tight_layout(rect=[0, 0.05, 1, 0.92])
-    plt.savefig(f'{OUT}/fig5-{fig_num}.png', dpi=200, bbox_inches='tight', facecolor='white')
-    plt.close()
-    print(f'Saved fig5-{fig_num}.png')
-
-
 def fig_5_4():
-    _province_map('bc-上海', 4, '上海（聚集型直辖市）')
-
-
-def fig_5_5():
-    _province_map('bc-新疆维吾尔自治区', 5, '新疆（地理跨度极大的稀疏场景）')
-
-
-def fig_5_6():
-    """图 5-6 三省份计算时间与规模"""
+    """图 5-4 三省份计算时间与规模"""
     rows = []
     for tag, label in [('bc-上海', '上海 BC'), ('bc-湖南', '湖南 BC'), ('bc-新疆维吾尔自治区', '新疆 BC')]:
         with open(f'{DATA}/{tag}/result.json') as f:
@@ -377,11 +309,11 @@ def fig_5_6():
     ax.grid(True, linestyle=':', alpha=0.3)
     ax.set_axisbelow(True)
 
-    fig.text(0.5, 0.01, '图 5-6    三省份计算效率与可扩展性', ha='center', fontsize=11, fontweight='bold')
+    fig.text(0.5, 0.01, '图 5-4    三省份计算效率与可扩展性', ha='center', fontsize=11, fontweight='bold')
     plt.tight_layout(rect=[0, 0.04, 1, 1])
-    plt.savefig(f'{OUT}/fig5-6.png', dpi=200, bbox_inches='tight', facecolor='white')
+    plt.savefig(f'{OUT}/fig5-4.png', dpi=200, bbox_inches='tight', facecolor='white')
     plt.close()
-    print('Saved fig5-6.png')
+    print('Saved fig5-4.png')
 
 
 if __name__ == '__main__':
@@ -389,6 +321,4 @@ if __name__ == '__main__':
     fig_5_2()
     fig_5_3()
     fig_5_4()
-    fig_5_5()
-    fig_5_6()
-    print('\nAll 6 figures generated.')
+    print('\nAll 4 figures generated.')
