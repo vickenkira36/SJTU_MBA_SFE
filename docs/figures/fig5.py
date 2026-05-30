@@ -312,7 +312,7 @@ def fig_5_4():
     ax.grid(True, linestyle=':', alpha=0.3)
     ax.set_axisbelow(True)
 
-    fig.text(0.5, 0.01, '图 5-4    三省份计算效率与可扩展性', ha='center', fontsize=11, fontweight='bold')
+    fig.text(0.5, 0.01, '图 5-4    三省份计算耗时对比', ha='center', fontsize=11, fontweight='bold')
     plt.tight_layout(rect=[0, 0.04, 1, 1])
     plt.savefig(f'{OUT}/fig5-4.png', dpi=200, bbox_inches='tight', facecolor='white')
     plt.close()
