@@ -3,6 +3,30 @@ title: "运筹算法在制药企业 SFE 辖区动态分配中的应用及商业�
 author: 陈一
 ---
 
+# 摘要 {.unnumbered}
+
+中国医药行业已从高速增长切换至存量博弈阶段，集采常态化、医保谈判机制化与医药反腐深水化三重政策压力持续压缩企业利润空间，使销售力有效性（Sales Force Effectiveness, SFE）这一中央管理职能的精细化转型变得空前迫切。销售辖区分配作为 SFE 的关键业务流程，本质是一个将数千家医院终端合理分配给数百名销售代表的多目标组合优化问题，却长期受困于"数据丰富、算法贫乏"的矛盾——多数企业依赖手工 Excel 博弈，决策周期长达数周；而国际商业 SaaS 套件又因中国业务规则的高度非标准化而水土不服。本研究旨在构建一套贴合中国医药行业业务规则、轻量可配置的运筹优化算法，填补从"数据富矿"到"智能决策"之间的技术鸿沟，并进一步探讨其商业化落地路径。
+
+在方法上，本研究首先通过对 12 位行业从业者的深度访谈与问卷调研，将分散的业务诉求锚定为可量化的算法需求清单；继而构建以综合价值指数（Index）为核心度量的多目标优化模型，采用基于阈值的统一惩罚框架，并设计大医院虚拟拆分预处理机制。算法的核心贡献在于"均衡优化—历史匹配"两阶段解耦架构：第一阶段以六层地理聚类生成初始解、模拟退火（SA）纯优化 Index 均衡性与地理紧凑性；第二阶段以 Hungarian 算法将匿名簇映射到历史辖区编号、最大化客户保留率。两阶段解耦使均衡性与历史延续性各自达到最优，规避了传统单阶段方法的目标妥协与锚定效应。
+
+实证基于业内某跨国药企脱敏后的真实业务数据，选取上海、湖南、新疆三个地理形态迥异的省份展开验证。结果显示：以湖南 BC 为主样本，算法将 Index 变异系数从 44.3% 降至 19.3%、辖区平均最大半径从 50.9 km 降至 37.4 km，按 Index 加权的客户保留率达 86.4%，实现了均衡、紧凑、延续三维同向改善；三省份横向对比进一步揭示"As-Is 失衡程度越深、算法重构越彻底、保留率相应分化"的客观规律。算法在三省份均于 4 秒内完成完整两阶段优化，相比人工方案的 4-8 周缩短约 5 个数量级，使日常化辖区管理成为可能。
+
+在管理与商业层面，本研究提出"算法基线 + 人工微调"的三阶段人机协同决策机制，并基于实证规律给出按 As-Is 失衡度分层的部署节奏与变革管理建议；进而将视角从"算法工具"提升到"SFE 职能行业转型"，论证算法作为 SFE 职能蒸馏路径下核心算力底座的商业定位，给出垂类 Agent 外包、SaaS 订阅、企业内部部署三种差异化商业化形态。本研究完整覆盖"政策/行业 → 调研 → 算法 → 实证 → 商业化"的全链条 MBA 视角分析，弥补了国内文献在工程化与管理化两端的双重缺失。
+
+**关键词：** 销售力有效性；销售辖区分配；运筹优化；模拟退火；Hungarian 算法；商业化
+
+# Abstract {.unnumbered}
+
+China's pharmaceutical industry has shifted from rapid growth into a stock-competition era. The combined pressure of normalized volume-based procurement, institutionalized medical-insurance negotiation, and deepening anti-corruption enforcement keeps compressing corporate profit margins, making the refined transformation of Sales Force Effectiveness (SFE)—a central management function—more urgent than ever. As a key SFE process, sales territory alignment is essentially a multi-objective combinatorial optimization problem that allocates thousands of hospital terminals among hundreds of sales representatives. Yet it has long been trapped in a "data-rich but algorithm-poor" dilemma: most firms rely on manual Excel negotiation with decision cycles lasting weeks, while international commercial SaaS suites fail to adapt to the highly non-standardized business rules of the Chinese market. This study aims to build a lightweight, configurable operations-research optimization algorithm tailored to Chinese pharmaceutical business rules, bridging the gap between the "data mine" and "intelligent decision-making," and further explores its commercialization path.
+
+Methodologically, the study first anchors scattered business demands into a quantifiable algorithmic requirement list through in-depth interviews and questionnaires with 12 industry practitioners. It then constructs a multi-objective optimization model centered on a composite value Index, adopting a threshold-based unified penalty framework and a virtual-splitting preprocessing mechanism for large hospitals. The core contribution is a decoupled two-stage "balance optimization–historical matching" architecture: the first stage generates an initial solution via six-layer geographic clustering and purely optimizes Index balance and geographic compactness through Simulated Annealing (SA); the second stage maps anonymous clusters to historical territory codes via the Hungarian algorithm to maximize customer retention. This decoupling lets balance and historical continuity each reach their optimum, avoiding the objective compromise and anchoring effect of conventional single-stage methods.
+
+The empirical validation uses anonymized real business data from a multinational pharmaceutical company, covering three provinces with distinct geographic morphologies: Shanghai, Hunan, and Xinjiang. Taking Hunan BC as the primary sample, the algorithm reduced the Index coefficient of variation from 44.3% to 19.3% and the average maximum territory radius from 50.9 km to 37.4 km, while achieving an Index-weighted customer retention rate of 86.4%—an aligned improvement across balance, compactness, and continuity. The cross-province comparison further reveals the objective pattern that "the deeper the As-Is imbalance, the more thorough the algorithmic restructuring, and the more differentiated the retention rate." The algorithm completes the full two-stage optimization within 4 seconds for all three provinces, roughly five orders of magnitude faster than the 4–8 weeks required by manual approaches, making routine territory management feasible.
+
+At the managerial and commercial level, the study proposes a three-stage human-machine collaborative decision mechanism of "algorithmic baseline plus manual fine-tuning," and offers deployment-pace and change-management recommendations stratified by As-Is imbalance. Elevating the perspective from an "algorithmic tool" to the "industry-wide transformation of the SFE function," it positions the algorithm as the core computational foundation along the SFE-distillation path, and presents three differentiated commercialization forms: vertical-Agent outsourcing, SaaS subscription, and on-premise deployment. The study delivers a full-chain MBA-perspective analysis spanning "policy/industry → survey → algorithm → empirical validation → commercialization," addressing the dual gap in domestic literature on both the engineering and management ends.
+
+**Key words:** Sales Force Effectiveness; Sales Territory Alignment; Operations Research Optimization; Simulated Annealing; Hungarian Algorithm; Commercialization
+
 # 第一章 绪论
 
 ## 1.1 研究背景

@@ -1,0 +1,22 @@
+{
+  "_comment": "封面与页眉信息 —— 同学复用本模板时，只需修改本文件即可，无需改 Python 代码。",
+  "school_line": "上海交通大学硕士学位论文",
+  "title": "运筹算法在制药企业 SFE 辖区\n动态分配中的应用及商业化研究",
+  "english_lines": [
+    "A Dissertation Submitted to",
+    "Shanghai Jiao Tong University",
+    "for the Degree of Master of Business Administration"
+  ],
+  "fields": [
+    ["姓　　名", "陈　一"],
+    ["学　　号", "124120935584"],
+    ["导　　师", "葛冬冬　教授"],
+    ["院　　系", "安泰经济与管理学院"],
+    ["学科/专业", "工商管理（MBA）"],
+    ["申请学位", "工商管理硕士"]
+  ],
+  "date": "2026 年 12 月",
+  "header_left": "上海交通大学硕士学位论文",
+  "frontmatter_header_right": "摘　要",
+  "toc_header_right": "目　录"
+}

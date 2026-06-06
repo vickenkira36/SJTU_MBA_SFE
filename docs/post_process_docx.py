@@ -12,8 +12,10 @@ Usage:
     python3 docs/post_process_docx.py docs/chapter04.docx [docs/chapterXX.docx ...]
 """
 
+import os
 import sys
 from docx import Document
+from docx.shared import Cm
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
@@ -114,7 +116,449 @@ def _clear_cell_first_line_indent(table) -> None:
                     ind.set(qn('w:hanging'), '0')
 
 
-def post_process(docx_path: str) -> int:
+def _make_para(text, *, size_pt, bold=False, align='center', font_cjk='黑体',
+               space_before_pt=0, space_after_pt=0, underline=False):
+    """Build a standalone <w:p> with a single styled run (or empty if text is '')."""
+    p = OxmlElement('w:p')
+    pPr = OxmlElement('w:pPr')
+    jc = OxmlElement('w:jc'); jc.set(qn('w:val'), align); pPr.append(jc)
+    spacing = OxmlElement('w:spacing')
+    spacing.set(qn('w:before'), str(int(space_before_pt * 20)))
+    spacing.set(qn('w:after'), str(int(space_after_pt * 20)))
+    spacing.set(qn('w:line'), '360'); spacing.set(qn('w:lineRule'), 'auto')
+    pPr.append(spacing)
+    ind = OxmlElement('w:ind')
+    ind.set(qn('w:firstLine'), '0'); ind.set(qn('w:firstLineChars'), '0')
+    pPr.append(ind)
+    p.append(pPr)
+    if text:
+        r = OxmlElement('w:r')
+        rPr = OxmlElement('w:rPr')
+        rfonts = OxmlElement('w:rFonts')
+        rfonts.set(qn('w:ascii'), 'Times New Roman')
+        rfonts.set(qn('w:hAnsi'), 'Times New Roman')
+        rfonts.set(qn('w:eastAsia'), font_cjk)
+        rPr.append(rfonts)
+        if bold:
+            rPr.append(OxmlElement('w:b')); rPr.append(OxmlElement('w:bCs'))
+        if underline:
+            u = OxmlElement('w:u'); u.set(qn('w:val'), 'single'); rPr.append(u)
+        sz = OxmlElement('w:sz'); sz.set(qn('w:val'), str(int(size_pt * 2)))
+        szCs = OxmlElement('w:szCs'); szCs.set(qn('w:val'), str(int(size_pt * 2)))
+        rPr.append(sz); rPr.append(szCs)
+        r.append(rPr)
+        t = OxmlElement('w:t'); t.set(qn('xml:space'), 'preserve'); t.text = text
+        r.append(t)
+        p.append(r)
+    return p
+
+
+def _make_field_row(label, value):
+    """Cover field line: '标签：____value____' centered, value underlined."""
+    p = OxmlElement('w:p')
+    pPr = OxmlElement('w:pPr')
+    jc = OxmlElement('w:jc'); jc.set(qn('w:val'), 'center'); pPr.append(jc)
+    spacing = OxmlElement('w:spacing')
+    spacing.set(qn('w:after'), '160'); spacing.set(qn('w:line'), '300')
+    spacing.set(qn('w:lineRule'), 'auto'); pPr.append(spacing)
+    p.append(pPr)
+    for txt, ul in ((label + '：', False), (value, True)):
+        r = OxmlElement('w:r')
+        rPr = OxmlElement('w:rPr')
+        rfonts = OxmlElement('w:rFonts')
+        rfonts.set(qn('w:ascii'), 'Times New Roman')
+        rfonts.set(qn('w:hAnsi'), 'Times New Roman')
+        rfonts.set(qn('w:eastAsia'), '黑体')
+        rPr.append(rfonts)
+        if ul:
+            u = OxmlElement('w:u'); u.set(qn('w:val'), 'single'); rPr.append(u)
+        sz = OxmlElement('w:sz'); sz.set(qn('w:val'), '28')
+        szCs = OxmlElement('w:szCs'); szCs.set(qn('w:val'), '28')
+        rPr.append(sz); rPr.append(szCs)
+        r.append(rPr)
+        t = OxmlElement('w:t'); t.set(qn('xml:space'), 'preserve'); t.text = txt
+        r.append(t)
+        p.append(r)
+    return p
+
+
+def _make_logo_para(doc, img_path, width_cm=3.6, space_after_pt=12):
+    """居中插入校徽图片，返回该段落的 <w:p>。"""
+    # 借助一个临时段落让 python-docx 完成图片嵌入与关系注册
+    tmp = doc.add_paragraph()
+    run = tmp.add_run()
+    run.add_picture(img_path, width=Cm(width_cm))
+    p_el = tmp._element
+    p_el.getparent().remove(p_el)  # 从文档末尾摘出，稍后插到封面
+    # 居中
+    pPr = p_el.get_or_add_pPr()
+    jc = OxmlElement('w:jc'); jc.set(qn('w:val'), 'center'); pPr.append(jc)
+    spacing = OxmlElement('w:spacing')
+    spacing.set(qn('w:after'), str(int(space_after_pt * 20))); pPr.append(spacing)
+    return p_el
+
+
+def _make_page_break():
+    p = OxmlElement('w:p')
+    r = OxmlElement('w:r')
+    br = OxmlElement('w:br'); br.set(qn('w:type'), 'page')
+    r.append(br)
+    p.append(r)
+    return p
+
+
+def _base_sectpr_xml(extra=''):
+    """生成一个完整的 sectPr XML 字符串（继承模板页面设置 + 页眉页脚引用占位）。
+
+    sectPr 必须包含页面尺寸/边距，否则 Word 会回退到默认 A4 边距。
+    extra 用于追加 titlePg / pgNumType 等差异化设置。
+    """
+    return (
+        '<w:sectPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        '<w:pgSz w:w="11906" w:h="16838"/>'
+        '<w:pgMar w:top="1985" w:right="1418" w:bottom="2268" w:left="1418" '
+        'w:header="1418" w:footer="1701" w:gutter="0"/>'
+        f'{extra}'
+        '</w:sectPr>'
+    )
+
+
+def _make_section_para(sectpr_xml):
+    """生成一个仅承载节属性的空段落（OOXML：节属性写在该节末段的 pPr 内）。"""
+    from docx.oxml import parse_xml
+    p = OxmlElement('w:p')
+    pPr = OxmlElement('w:pPr')
+    pPr.append(parse_xml(sectpr_xml))
+    p.append(pPr)
+    return p
+
+
+# 封面与页眉信息从外部 JSON 加载（docs/thesis-meta.json），
+# 同学复用本模板时只需改 JSON，无需动本脚本。找不到时回退到内置默认值。
+_META_PATH = os.path.join(os.path.dirname(__file__), 'thesis-meta.json')
+
+_DEFAULT_META = {
+    'school_line': '上海交通大学硕士学位论文',
+    'title': '论文题目占位（请在 docs/thesis-meta.json 中修改）',
+    'english_lines': [
+        'A Dissertation Submitted to',
+        'Shanghai Jiao Tong University',
+        'for the Degree of Master of Business Administration',
+    ],
+    'fields': [
+        ['姓　　名', '张　三'],
+        ['学　　号', '0000000000'],
+        ['导　　师', '某某　教授'],
+        ['院　　系', '安泰经济与管理学院'],
+        ['学科/专业', '工商管理（MBA）'],
+        ['申请学位', '工商管理硕士'],
+    ],
+    'date': '20XX 年 XX 月',
+    'header_left': '上海交通大学硕士学位论文',
+    'frontmatter_header_right': '摘　要',
+    'toc_header_right': '目　录',
+}
+
+
+def _load_meta():
+    import json
+    meta = dict(_DEFAULT_META)
+    if os.path.exists(_META_PATH):
+        with open(_META_PATH, encoding='utf-8') as f:
+            data = json.load(f)
+        meta.update({k: v for k, v in data.items() if not k.startswith('_')})
+    return meta
+
+
+META = _load_meta()
+# 兼容旧引用：COVER 沿用 title/fields/date 三个键
+COVER = {'title': META['title'], 'fields': META['fields'], 'date': META['date']}
+
+
+LOGO_PATH = os.path.join(os.path.dirname(__file__), 'figures', 'sjtu-logo.png')
+
+
+def _build_cover_elements(doc):
+    """封面布局 —— 紧凑排版确保单页容纳。各段间距经过压缩。"""
+    els = []
+    els.append(_make_para(META['school_line'], size_pt=24, bold=True,
+                          font_cjk='黑体', space_before_pt=12, space_after_pt=10))
+    # 校徽（2.6cm，间距收紧）
+    if os.path.exists(LOGO_PATH):
+        els.append(_make_logo_para(doc, LOGO_PATH, width_cm=2.6, space_after_pt=10))
+    # 题目（可能两行）
+    title_lines = META['title'].split('\n')
+    for i, line in enumerate(title_lines):
+        is_last = (i == len(title_lines) - 1)
+        els.append(_make_para(line, size_pt=20, bold=True, font_cjk='黑体',
+                              space_after_pt=(16 if is_last else 4)))
+    # 英文行
+    eng = META['english_lines']
+    for i, line in enumerate(eng):
+        is_last = (i == len(eng) - 1)
+        els.append(_make_para(line, size_pt=11, font_cjk='宋体',
+                              space_after_pt=(28 if is_last else 0)))
+    for label, value in META['fields']:
+        els.append(_make_field_row(label, value))
+    els.append(_make_para(META['date'], size_pt=15, font_cjk='黑体',
+                          space_before_pt=24))
+    els.append(_make_page_break())
+    return els
+
+
+def _section_para_carrying(sectpr_el):
+    """把一个 sectPr 元素塞进新空段落的 pPr —— 该段落即成为某节的末段（分节符）。"""
+    p = OxmlElement('w:p')
+    pPr = OxmlElement('w:pPr')
+    pPr.append(sectpr_el)
+    p.append(pPr)
+    return p
+
+
+def _set_pgnumtype(sectpr, fmt=None, start=None):
+    """设置/替换节的页码格式与起始值。"""
+    old = sectpr.find(qn('w:pgNumType'))
+    if old is not None:
+        sectpr.remove(old)
+    el = OxmlElement('w:pgNumType')
+    if fmt:
+        el.set(qn('w:fmt'), fmt)
+    if start is not None:
+        el.set(qn('w:start'), str(start))
+    # pgNumType 在 sectPr 中的合法位置靠后，append 即可
+    sectpr.append(el)
+
+
+def _add_titlepg(sectpr):
+    """封面节首页特殊：无页眉页脚（未定义 first-page 引用时即为空）。"""
+    if sectpr.find(qn('w:titlePg')) is None:
+        sectpr.append(OxmlElement('w:titlePg'))
+
+
+def _build_toc_elements():
+    """目录标题 + Word TOC 域（打开后右键更新域生成页码）。
+    注：不含前导分页符——目录前的分节符已负责分页。"""
+    els = [_make_para('目　录', size_pt=16, bold=True, font_cjk='黑体',
+                      space_after_pt=18)]
+    # 复杂域: begin / instrText / separate / placeholder / end
+    p = OxmlElement('w:p')
+
+    def run_fld(child):
+        r = OxmlElement('w:r'); r.append(child); return r
+
+    begin = OxmlElement('w:fldChar')
+    begin.set(qn('w:fldCharType'), 'begin'); begin.set(qn('w:dirty'), 'true')
+    instr = OxmlElement('w:instrText')
+    instr.set(qn('xml:space'), 'preserve')
+    instr.text = 'TOC \\o "1-3" \\h \\z \\u '
+    sep = OxmlElement('w:fldChar'); sep.set(qn('w:fldCharType'), 'separate')
+    ph = OxmlElement('w:r')
+    pht = OxmlElement('w:t'); pht.set(qn('xml:space'), 'preserve')
+    pht.text = '（在 Word 中右键此处选择“更新域”→“更新整个目录”以生成目录）'
+    ph.append(pht)
+    end = OxmlElement('w:fldChar'); end.set(qn('w:fldCharType'), 'end')
+    for c in (begin, instr, sep):
+        p.append(run_fld(c))
+    p.append(ph)
+    p.append(run_fld(end))
+    els.append(p)
+    return els
+
+
+def _enable_update_fields(doc):
+    """让 Word 打开文档时提示更新域（目录页码自动生成）。"""
+    settings = doc.settings.element
+    if settings.find(qn('w:updateFields')) is None:
+        uf = OxmlElement('w:updateFields'); uf.set(qn('w:val'), 'true')
+        settings.append(uf)
+
+
+# 正文章节标题（这些 Heading 1 各自成节，页眉右侧写死本节标题）
+_BODY_CHAPTER_PREFIXES = ('第一章', '第二章', '第三章', '第四章', '第五章',
+                          '第六章', '第七章', '附录', '参考文献')
+
+
+def _split_body_into_sections(doc):
+    """把正文按章切成多个 section（在每个章标题前插入分节符）。
+    返回 [(章标题文本, 该章对应的 sectPr 元素), ...]，供随后逐节填页眉。
+    """
+    import copy
+    body = doc.element.body
+    body_sectpr = body.find(qn('w:sectPr'))
+
+    # 找到所有正文章标题段落（按文档顺序）
+    chapter_paras = []
+    for p in doc.paragraphs:
+        if p.style and p.style.name == 'Heading 1' and \
+                p.text.strip().startswith(_BODY_CHAPTER_PREFIXES):
+            chapter_paras.append(p)
+
+    # 在第 2..N 个章标题前各插一个分节符段落，让上一章在此结束成节。
+    # 第 1 个章标题（第一章）前已有"前置节分节符"（由 add_frontmatter 插入），不再插。
+    # 每个分节符继承正文页面设置 + 阿拉伯页码（仅首节 start=1，其余不重启）。
+    section_markers = []  # (上一章标题文本, sectPr元素)
+    for idx in range(1, len(chapter_paras)):
+        prev_title = chapter_paras[idx - 1].text.strip()
+        sectpr = copy.deepcopy(body_sectpr)
+        # 第一章（idx==1 承载的是第 1 章节属性）阿拉伯页码从 1 重启，其余续页
+        if idx == 1:
+            _set_pgnumtype(sectpr, fmt='decimal', start=1)
+        else:
+            _set_pgnumtype(sectpr, fmt='decimal')
+        marker = _section_para_carrying(sectpr)
+        chapter_paras[idx]._element.addprevious(marker)
+        section_markers.append((prev_title, sectpr))
+    # 最后一章用 body 末尾的 body_sectpr（续页，不重启）
+    _set_pgnumtype(body_sectpr, fmt='decimal')
+    section_markers.append((chapter_paras[-1].text.strip(), body_sectpr))
+    return section_markers
+
+
+def _header_xml(right_text, right=True):
+    """构造一个完整 header part 的 XML（左=校名 tab 右=章名，底部横线）。
+    right=False 时只显示左侧校名（用于摘要/目录等前置页）。
+    """
+    right_part = (
+        '<w:r><w:tab/></w:r>'
+        '<w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" '
+        'w:eastAsia="宋体"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr>'
+        f'<w:t xml:space="preserve">{right_text}</w:t></w:r>'
+    ) if right else ''
+    return (
+        '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        '<w:p><w:pPr>'
+        '<w:pStyle w:val="Header"/>'
+        '<w:ind w:firstLine="0" w:firstLineChars="0" w:left="0"/>'
+        '<w:tabs><w:tab w:val="right" w:pos="9072"/></w:tabs>'
+        '<w:pBdr><w:bottom w:val="single" w:sz="4" w:space="1" w:color="000000"/></w:pBdr>'
+        '</w:pPr>'
+        '<w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" '
+        'w:eastAsia="宋体"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr>'
+        f'<w:t xml:space="preserve">{META["header_left"]}</w:t></w:r>'
+        f'{right_part}'
+        '</w:p></w:hdr>'
+    )
+
+
+def _set_section_header(doc, section, right_text, right=True):
+    """为单个 section 创建独立 header part 并写入页眉（左=校名，右=本章标题）。
+
+    通过 DocumentPart.add_header_part() 新建独立 part，再把本节 sectPr 的
+    默认 headerReference 重指向它——避免所有节共享同一个 header1.xml。
+    """
+    from docx.oxml import parse_xml
+    sectpr = section._sectPr
+    # 移除本节已有的 default headerReference（指向共享的 header1.xml）
+    for ref in sectpr.findall(qn('w:headerReference')):
+        if ref.get(qn('w:type')) in ('default', None):
+            sectpr.remove(ref)
+    # 新建独立 header part
+    header_part, rId = doc.part.add_header_part()
+    hdr = header_part._element
+    # 清空默认内容，写入目标段落（修改子节点而非替换根元素，确保被正确序列化）
+    for child in list(hdr):
+        hdr.remove(child)
+    target = parse_xml(_header_xml(right_text, right=right))
+    for child in list(target):
+        hdr.append(child)
+    # 在 sectPr 顶部插入指向新 part 的 default headerReference
+    ref = OxmlElement('w:headerReference')
+    ref.set(qn('w:type'), 'default')
+    ref.set(qn('r:id'), rId)
+    sectpr.insert(0, ref)
+
+
+def add_frontmatter(doc) -> None:
+    """在文档最前插入封面页 + 目录，并建立三节分段页码：
+       封面节（首页无页眉页脚）→ 前置节（摘要/Abstract/目录，罗马数字 Ⅰ起）
+       → 正文节（第一章起，阿拉伯数字 1 起）。
+    """
+    import copy
+    # pandoc 由 frontmatter title/author 生成的 Title/Author 段落与封面重复，删除
+    for p in list(doc.paragraphs):
+        if p.style and p.style.name in ('Title', 'Author'):
+            p._element.getparent().remove(p._element)
+
+    body = doc.element.body
+    body_sectpr = body.find(qn('w:sectPr'))  # 文档级 sectPr = 正文节属性
+
+    # 正文节：阿拉伯数字，从 1 重启
+    _set_pgnumtype(body_sectpr, fmt='decimal', start=1)
+
+    # 锚点 1：文档第一个段落（摘要标题）→ 封面插到它前面
+    first_anchor = doc.paragraphs[0]._element
+    cover_els = _build_cover_elements(doc)
+    # 移除封面末尾的纯分页符，改用封面节分节符承载
+    if cover_els and cover_els[-1].find(qn('w:r')) is not None and \
+            cover_els[-1].find('.//' + qn('w:br')) is not None:
+        cover_els = cover_els[:-1]
+    # 封面节 sectPr：复制正文页面设置，加 titlePg（首页空页眉脚），页码不显示
+    cover_sectpr = copy.deepcopy(body_sectpr)
+    _set_pgnumtype(cover_sectpr, fmt='upperRoman')  # 占位，封面首页因 titlePg 不显示
+    _add_titlepg(cover_sectpr)
+    cover_els.append(_section_para_carrying(cover_sectpr))
+    for el in cover_els:
+        first_anchor.addprevious(el)
+
+    # 锚点 2：第一章标题 → 目录 + 前置节分节符插到它前面
+    ch1_anchor = None
+    for p in doc.paragraphs:
+        if p.style and p.style.name.startswith('Heading 1') and \
+                p.text.strip().startswith('第一章'):
+            ch1_anchor = p._element
+            break
+    if ch1_anchor is None:
+        raise RuntimeError('未找到“第一章”标题，无法定位目录插入点')
+    # 前置区拆成两个子节：
+    #   摘要节（摘要 + Abstract）页眉右侧"摘　要"
+    #   目录节（目录）页眉右侧"目　录"
+    # 摘要节 sectPr：罗马数字从 Ⅰ 起，承载在"目录前的分节符"上
+    abstract_sectpr = copy.deepcopy(body_sectpr)
+    _set_pgnumtype(abstract_sectpr, fmt='upperRoman', start=1)
+    # 目录节 sectPr：续罗马数字（不重启），承载在第一章前的分节符上
+    toc_sectpr = copy.deepcopy(body_sectpr)
+    _set_pgnumtype(toc_sectpr, fmt='upperRoman')
+
+    toc_els = _build_toc_elements()
+    # 在目录标题最前插入"摘要节分节符"，使摘要+Abstract 成为独立一节
+    toc_els.insert(0, _section_para_carrying(abstract_sectpr))
+    # 目录节末尾（第一章前）插入"目录节分节符"
+    toc_els.append(_section_para_carrying(toc_sectpr))
+    for el in toc_els:
+        ch1_anchor.addprevious(el)
+
+    # 摘要节（index 1）、目录节（index 2）页眉右侧文字（取自 meta）
+    _set_section_header(doc, doc.sections[1], META['frontmatter_header_right'])
+    _set_section_header(doc, doc.sections[2], META['toc_header_right'])
+
+    # 正文按章分节，每节页眉右侧写死本章标题（替代不稳定的 STYLEREF 域）
+    section_markers = _split_body_into_sections(doc)
+    # 分节后 sections 顺序固定为：[封面, 摘要, 目录, 章1, 章2, ..., 末章]
+    # 正文节从 index 3 开始，与 section_markers 一一对应。
+    body_sections = doc.sections[3:]
+    titles = [title for title, _ in section_markers]
+    if len(body_sections) != len(titles):
+        raise RuntimeError(
+            f'正文节数({len(body_sections)})与章标题数({len(titles)})不符')
+    for section, title in zip(body_sections, titles):
+        _set_section_header(doc, section, title)
+
+    # 封面首页：显式建立空的 first-page 页眉/页脚，确保不显示横线与页码
+    cover_section = doc.sections[0]
+    cover_section.different_first_page_header_footer = True
+    fh = cover_section.first_page_header
+    fh.is_linked_to_previous = False
+    for p in list(fh.paragraphs):
+        p.clear()
+    ff = cover_section.first_page_footer
+    ff.is_linked_to_previous = False
+    for p in list(ff.paragraphs):
+        p.clear()
+
+    _enable_update_fields(doc)
+
+
+def post_process(docx_path: str, with_cover: bool = False) -> int:
     doc = Document(docx_path)
     n_tables = len(doc.tables)
 
@@ -130,6 +574,9 @@ def post_process(docx_path: str) -> int:
         _clear_cell_widths(table)
         _set_row_properties(table)
         _clear_cell_first_line_indent(table)
+
+    if with_cover:
+        add_frontmatter(doc)
 
     doc.save(docx_path)
     return n_tables
@@ -151,6 +598,9 @@ def post_process(docx_path: str) -> int:
 
 
 if __name__ == '__main__':
-    for path in sys.argv[1:]:
-        n = post_process(path)
-        print(f"Post-processed {path}: {n} tables")
+    args = [a for a in sys.argv[1:] if a != '--cover']
+    with_cover = '--cover' in sys.argv[1:]
+    for path in args:
+        n = post_process(path, with_cover=with_cover)
+        extra = ' + 封面/目录' if with_cover else ''
+        print(f"Post-processed {path}: {n} tables{extra}")

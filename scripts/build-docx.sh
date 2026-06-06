@@ -18,7 +18,7 @@ pandoc docs/thesis.md -o docs/thesis.docx \
     --csl=docs/gb-t-7714-2015-numeric.csl \
     -f markdown -t docx
 
-echo "→ post_process: 表格 AutoFit + 边框 + 防跨页 + 取消首行缩进"
-python3 docs/post_process_docx.py docs/thesis.docx
+echo "→ post_process: 封面/目录 + 表格 AutoFit + 边框 + 防跨页 + 取消首行缩进"
+python3 docs/post_process_docx.py docs/thesis.docx --cover
 
 echo "✓ docs/thesis.docx 已重新生成"
