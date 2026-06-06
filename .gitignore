@@ -46,3 +46,21 @@ next-env.d.ts
 
 # 第五章实证数据（脱敏业务数据 + hco-master，含敏感信息）
 /data/case/
+
+# HCO 主数据（10 万+ 医院真实主数据，含名称/坐标，禁止公开）
+public/hco-master.xlsx
+
+# 论文构建中间/冗余产物（仅保留单源 thesis.md + 成品 thesis.docx）
+docs/thesis-part*.docx
+docs/thesis——*.docx
+docs/thesis-review.html
+docs/thesis-comments.json
+
+# 外部技能包快照（非本项目内容）
+docs/superpowers/
+
+# 论文写作降 AIGC 检测的中间文件
+*-降AI后.docx
+*-降低AI后.docx
+# 过期分章 docx 产物（已由单源 thesis.md 取代）
+docs/chapter0*.docx
