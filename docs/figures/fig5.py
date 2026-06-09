@@ -8,38 +8,27 @@
 """
 import json
 import math
+import sys
+import os
 from pathlib import Path
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _style import (apply_style, C_PRIMARY, C_SECOND, C_LINE,
+                    C_ACCENT, C_TARGET)
 import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
 import numpy as np
 
-# === 字体配置 ===
-PREFERRED = ['Noto Sans CJK SC', 'Hiragino Sans GB', 'PingFang HK', 'Heiti TC', 'STHeiti']
-available = {f.name for f in fm.fontManager.ttflist}
-FONT_NAME = next((f for f in PREFERRED if f in available), 'sans-serif')
-
-plt.rcParams.update({
-    'font.sans-serif': [FONT_NAME] + PREFERRED + ['sans-serif'],
-    'font.family': 'sans-serif',
-    'font.size': 11,
-    'axes.unicode_minus': False,
-    'figure.facecolor': 'white',
-    'axes.facecolor': 'white',
-    'axes.edgecolor': 'black',
-    'axes.linewidth': 0.8,
-})
-print(f'Using font: {FONT_NAME}')
+apply_style()
 
 OUT = 'docs/figures'
 DATA = 'data/case/output'
 
-# 配色
-DARK = '#404040'
-LIGHT = '#A8A8A8'
-BLUE = '#1F4E79'
-RED = '#C0392B'
-GREEN = '#27AE60'
+# 配色（对齐统一调色板）
+DARK = C_PRIMARY     # 主柱 深蓝灰
+LIGHT = C_SECOND     # 对照系列 中灰
+BLUE = C_PRIMARY     # 原副柱蓝统一为主色
+RED = C_ACCENT       # 强调 / 阈值线
+GREEN = C_TARGET     # 改善 / 达标
 GRAY_BG = '#EEEEEE'
 
 
@@ -130,9 +119,9 @@ def fig_5_1():
     # 图例：±20% 阈值
     ax.text(max_v * 0.6, len(common) - 0.5, '红虚线：±20% 阈值（800/1200）', fontsize=8.5, color=RED)
 
-    fig.text(0.5, 0.01, '图 5-1    湖南 BC 主样本：As-Is 与 To-Be 辖区 Index 均衡度对比', ha='center', fontsize=11, fontweight='bold')
+    fig.text(0.5, 0.01, '图 5-1    湖南样本：As-Is 与 To-Be 辖区 Index 均衡度对比', ha='center', fontsize=10.5, fontfamily='Kaiti SC')
     plt.tight_layout(rect=[0, 0.04, 1, 1])
-    plt.savefig(f'{OUT}/fig5-1.png', dpi=200, bbox_inches='tight', facecolor='white')
+    plt.savefig(f'{OUT}/fig5-1.png', bbox_inches='tight', facecolor='white')
     plt.close()
     print('Saved fig5-1.png')
 
@@ -204,9 +193,9 @@ def fig_5_2():
                 xy=(max_r*0.6, max_r*0.05), fontsize=9.5,
                 bbox=dict(boxstyle='round,pad=0.4', facecolor=GRAY_BG, edgecolor='gray', linewidth=0.5))
 
-    fig.text(0.5, 0.01, '图 5-2    湖南 BC：辖区最大半径 As-Is vs To-Be 散点图', ha='center', fontsize=11, fontweight='bold')
+    fig.text(0.5, 0.01, '图 5-2    湖南：辖区最大半径 As-Is vs To-Be 散点图', ha='center', fontsize=10.5, fontfamily='Kaiti SC')
     plt.tight_layout(rect=[0, 0.04, 1, 1])
-    plt.savefig(f'{OUT}/fig5-2.png', dpi=200, bbox_inches='tight', facecolor='white')
+    plt.savefig(f'{OUT}/fig5-2.png', bbox_inches='tight', facecolor='white')
     plt.close()
     print('Saved fig5-2.png')
 
@@ -223,7 +212,7 @@ def fig_5_3():
     ax = axes[0]
     cats = ['完全保留', '部分保留', '完全变动']
     vals = [ret['fully_retained'], ret['partial_retained'], ret['fully_changed']]
-    colors = [GREEN, '#F39C12', RED]
+    colors = [GREEN, LIGHT, RED]  # 完全保留=绿 / 部分=中灰 / 完全变动=红
     bars = ax.bar(cats, vals, color=colors, edgecolor='white', linewidth=1, width=0.55)
     for bar, v in zip(bars, vals):
         ax.text(bar.get_x() + bar.get_width()/2, v + 1.5, f'{v}', ha='center', va='bottom', fontsize=10, fontweight='bold')
@@ -243,7 +232,7 @@ def fig_5_3():
     metric_vals = [ret['retention_rate_count_pct'], ret['retention_rate_idx_weighted_pct']]
     bars = ax.bar(metrics_cats, metric_vals, color=[LIGHT, BLUE], edgecolor='white', linewidth=1, width=0.5)
     for bar, v in zip(bars, metric_vals):
-        ax.text(bar.get_x() + bar.get_width()/2, v + 1.5, f'{v}%', ha='center', va='bottom', fontsize=11, fontweight='bold')
+        ax.text(bar.get_x() + bar.get_width()/2, v + 1.5, f'{v}%', ha='center', va='bottom', fontsize=10.5, fontfamily='Kaiti SC')
     # G1 调研中受访者偏好的"高保留率方案"对应 92% 保留率（67% 受访者选择）
     ax.axhline(92, color=RED, linestyle='--', linewidth=1, alpha=0.6)
     ax.text(1.4, 93, 'G1 调研偏好方案 92%\n(67% 受访者选择)', fontsize=8.5, color=RED, ha='right')
@@ -255,9 +244,9 @@ def fig_5_3():
     ax.grid(True, axis='y', linestyle=':', alpha=0.3)
     ax.set_axisbelow(True)
 
-    fig.text(0.5, 0.01, '图 5-3    湖南 BC 主样本：客户保留率与震荡分布', ha='center', fontsize=11, fontweight='bold')
+    fig.text(0.5, 0.01, '图 5-3    湖南样本：客户保留率与震荡分布', ha='center', fontsize=10.5, fontfamily='Kaiti SC')
     plt.tight_layout(rect=[0, 0.04, 1, 1])
-    plt.savefig(f'{OUT}/fig5-3.png', dpi=200, bbox_inches='tight', facecolor='white')
+    plt.savefig(f'{OUT}/fig5-3.png', bbox_inches='tight', facecolor='white')
     plt.close()
     print('Saved fig5-3.png')
 
@@ -312,9 +301,9 @@ def fig_5_4():
     ax.grid(True, linestyle=':', alpha=0.3)
     ax.set_axisbelow(True)
 
-    fig.text(0.5, 0.01, '图 5-4    三省份计算耗时对比', ha='center', fontsize=11, fontweight='bold')
+    fig.text(0.5, 0.01, '图 5-4    三省份计算耗时对比', ha='center', fontsize=10.5, fontfamily='Kaiti SC')
     plt.tight_layout(rect=[0, 0.04, 1, 1])
-    plt.savefig(f'{OUT}/fig5-4.png', dpi=200, bbox_inches='tight', facecolor='white')
+    plt.savefig(f'{OUT}/fig5-4.png', bbox_inches='tight', facecolor='white')
     plt.close()
     print('Saved fig5-4.png')
 
@@ -385,9 +374,9 @@ def fig_5_5():
 
     fig.text(0.5, 0.01,
              '图 5-5    SA 迭代次数对 To-Be CV 与改善幅度的敏感性扫描',
-             ha='center', fontsize=11, fontweight='bold')
+             ha='center', fontsize=10.5, fontfamily='Kaiti SC')
     plt.tight_layout(rect=[0, 0.04, 1, 1])
-    plt.savefig(f'{OUT}/fig5-5.png', dpi=200,
+    plt.savefig(f'{OUT}/fig5-5.png',
                 bbox_inches='tight', facecolor='white')
     plt.close()
     print('Saved fig5-5.png')

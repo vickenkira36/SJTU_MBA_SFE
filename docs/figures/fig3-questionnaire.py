@@ -3,35 +3,22 @@
 数据来源：作者整理自 SFE 行业从业者深度访谈与问卷调研（N=12），探索性研究用途。
 所有图统一字体、配色、DPI；输出到 docs/figures/fig3-X.png。
 """
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _style import apply_style, C_PRIMARY, C_SECOND, C_ACCENT
 import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
 import numpy as np
 
-# === 字体配置：优先简体中文 ===
-PREFERRED = ['Noto Sans CJK SC', 'Hiragino Sans GB', 'PingFang HK', 'Heiti TC', 'STHeiti']
-available = {f.name for f in fm.fontManager.ttflist}
-FONT_NAME = next((f for f in PREFERRED if f in available), 'sans-serif')
-
-plt.rcParams.update({
-    'font.sans-serif': [FONT_NAME] + PREFERRED + ['sans-serif'],
-    'font.family': 'sans-serif',
-    'font.size': 11,
-    'axes.unicode_minus': False,
-    'figure.facecolor': 'white',
-    'axes.facecolor': 'white',
-    'axes.edgecolor': 'black',
-    'axes.linewidth': 0.8,
-})
-print(f'Using font: {FONT_NAME}')
+apply_style()
 
 OUT = 'docs/figures'
-DPI = 220
 
-# 灰度配色 + 一个强调色
-GRAYS = ['#202020', '#505050', '#808080', '#B0B0B0', '#D8D8D8', '#EEEEEE']
-EMPHASIS = '#404040'   # 主色（深灰）
-LIGHT = '#A8A8A8'      # 次色（浅灰）
-HILITE = '#1F4E79'     # 强调色（深蓝），用于标注论文取值
+# 分类堆叠图用同色系明度梯度（保留多级以区分类别，主色起自 #2c3e50）
+GRAYS = ['#2c3e50', '#566573', '#808b96', '#aab7b8', '#d5dbdb', '#eaeded']
+EMPHASIS = C_PRIMARY   # 主色 深蓝灰
+LIGHT = C_SECOND       # 次色 中灰
+HILITE = C_ACCENT      # 强调色 砖红，用于标注论文取值
 
 
 # === 图 3-4 受访者背景分布（5 行水平堆叠条形）===
@@ -74,9 +61,9 @@ def fig_34():
     ax.spines['right'].set_visible(False)
 
     fig.text(0.5, 0.02, '图 3-4    受访者背景分布', ha='center',
-             fontsize=11, fontweight='bold')
+             fontsize=10.5, fontfamily='Kaiti SC')
     plt.tight_layout(rect=[0, 0.06, 1, 1])
-    plt.savefig(f'{OUT}/fig3-4.png', dpi=DPI, bbox_inches='tight',
+    plt.savefig(f'{OUT}/fig3-4.png', bbox_inches='tight',
                 facecolor='white')
     plt.close()
     print('Saved fig3-4.png')
@@ -120,9 +107,9 @@ def fig_35():
     ax.spines['right'].set_visible(False)
 
     fig.text(0.5, 0.01, '图 3-5    Index 构成维度入选率与赋权均值',
-             ha='center', fontsize=11, fontweight='bold')
+             ha='center', fontsize=10.5, fontfamily='Kaiti SC')
     plt.tight_layout(rect=[0, 0.05, 1, 1])
-    plt.savefig(f'{OUT}/fig3-5.png', dpi=DPI, bbox_inches='tight',
+    plt.savefig(f'{OUT}/fig3-5.png', bbox_inches='tight',
                 facecolor='white')
     plt.close()
     print('Saved fig3-5.png')
@@ -161,9 +148,9 @@ def fig_36():
     ax.spines['polar'].set_linewidth(0.6)
 
     fig.text(0.5, 0.02, '图 3-6    七项核心考量因素重要性（5 分制均值）',
-             ha='center', fontsize=11, fontweight='bold')
+             ha='center', fontsize=10.5, fontfamily='Kaiti SC')
     plt.tight_layout(rect=[0, 0.05, 1, 1])
-    plt.savefig(f'{OUT}/fig3-6.png', dpi=DPI, bbox_inches='tight',
+    plt.savefig(f'{OUT}/fig3-6.png', bbox_inches='tight',
                 facecolor='white')
     plt.close()
     print('Saved fig3-6.png')
@@ -196,9 +183,9 @@ def fig_37():
     ax.set_axisbelow(True)
 
     fig.text(0.5, 0.02, '图 3-7    大医院虚拟拆分阈值频次分布（D1）',
-             ha='center', fontsize=11, fontweight='bold')
+             ha='center', fontsize=10.5, fontfamily='Kaiti SC')
     plt.tight_layout(rect=[0, 0.05, 1, 1])
-    plt.savefig(f'{OUT}/fig3-7.png', dpi=DPI, bbox_inches='tight',
+    plt.savefig(f'{OUT}/fig3-7.png', bbox_inches='tight',
                 facecolor='white')
     plt.close()
     print('Saved fig3-7.png')
@@ -231,9 +218,9 @@ def fig_38():
     ax.set_axisbelow(True)
 
     fig.text(0.5, 0.02, '图 3-8    单代表覆盖城市数上限分布（D4）',
-             ha='center', fontsize=11, fontweight='bold')
+             ha='center', fontsize=10.5, fontfamily='Kaiti SC')
     plt.tight_layout(rect=[0, 0.05, 1, 1])
-    plt.savefig(f'{OUT}/fig3-8.png', dpi=DPI, bbox_inches='tight',
+    plt.savefig(f'{OUT}/fig3-8.png', bbox_inches='tight',
                 facecolor='white')
     plt.close()
     print('Saved fig3-8.png')
@@ -264,9 +251,9 @@ def fig_39():
     ax.axis('equal')
 
     fig.text(0.5, 0.02, '图 3-9    单辖区 Index 上下浮动容忍度分布（D2）',
-             ha='center', fontsize=11, fontweight='bold')
+             ha='center', fontsize=10.5, fontfamily='Kaiti SC')
     plt.tight_layout(rect=[0, 0.05, 1, 1])
-    plt.savefig(f'{OUT}/fig3-9.png', dpi=DPI, bbox_inches='tight',
+    plt.savefig(f'{OUT}/fig3-9.png', bbox_inches='tight',
                 facecolor='white')
     plt.close()
     print('Saved fig3-9.png')
@@ -306,14 +293,16 @@ def fig_310():
     ax.set_xlim(0, 100)
     ax.set_xlabel('受访者选择比例（%）', fontsize=11)
     ax.set_xticks(range(0, 101, 20))
-    ax.legend(loc='lower right', frameon=False, fontsize=10)
+    # 图例移到图表上方外侧，避免与最底部的条形重叠
+    ax.legend(loc='lower center', bbox_to_anchor=(0.5, 1.02),
+              ncol=2, frameon=False, fontsize=10)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 
     fig.text(0.5, 0.01, '图 3-10    G1 三组成对比较结果',
-             ha='center', fontsize=11, fontweight='bold')
+             ha='center', fontsize=10.5, fontfamily='Kaiti SC')
     plt.tight_layout(rect=[0, 0.05, 1, 1])
-    plt.savefig(f'{OUT}/fig3-10.png', dpi=DPI, bbox_inches='tight',
+    plt.savefig(f'{OUT}/fig3-10.png', bbox_inches='tight',
                 facecolor='white')
     plt.close()
     print('Saved fig3-10.png')

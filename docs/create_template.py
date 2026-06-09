@@ -37,12 +37,12 @@ if numbering_part is not None:
         if tag in ('abstractNum', 'num'):
             numbering_el.remove(child)
 
-# Step 3: Page setup —— 对齐官方模板：上3.5 下4.0 左右2.5cm
+# Step 3: Page setup —— 对齐官方纲领：上3.5 下4.0 左右2.8cm
 section = doc.sections[0]
 section.top_margin = Cm(3.5)
 section.bottom_margin = Cm(4)
-section.left_margin = Cm(2.5)
-section.right_margin = Cm(2.5)
+section.left_margin = Cm(2.8)
+section.right_margin = Cm(2.8)
 section.header_distance = Cm(2.5)
 section.footer_distance = Cm(3)
 section.page_width = Cm(21)
@@ -56,7 +56,7 @@ header.is_linked_to_previous = False
 hp = header.paragraphs[0]
 hp.clear()
 
-run_left = hp.add_run("上海交通大学硕士学位论文")
+run_left = hp.add_run("上海交通大学MBA学位论文")
 run_left.font.name = "宋体"
 run_left.font.size = Pt(9)
 run_left._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
@@ -92,8 +92,8 @@ pPr = hp._element.get_or_add_pPr()
 pPr.append(parse_xml(
     f'<w:ind {nsdecls("w")} w:firstLine="0" w:firstLineChars="0" w:left="0"/>'
 ))
-# Right-aligned tab at text width（左右各 2.5cm）
-text_width_twips = int((21 - 2.5 - 2.5) * 567)
+# Right-aligned tab at text width（左右各 2.8cm）
+text_width_twips = int((21 - 2.8 - 2.8) * 567)
 tabs = parse_xml(
     f'<w:tabs {nsdecls("w")}>'
     f'  <w:tab w:val="right" w:pos="{text_width_twips}"/>'

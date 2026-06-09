@@ -15,7 +15,7 @@ Usage:
 import os
 import sys
 from docx import Document
-from docx.shared import Cm
+from docx.shared import Cm, Pt
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
@@ -117,15 +117,17 @@ def _clear_cell_first_line_indent(table) -> None:
 
 
 def _make_para(text, *, size_pt, bold=False, align='center', font_cjk='黑体',
-               space_before_pt=0, space_after_pt=0, underline=False):
-    """Build a standalone <w:p> with a single styled run (or empty if text is '')."""
+               space_before_pt=0, space_after_pt=0, underline=False,
+               line=360):
+    """Build a standalone <w:p> with a single styled run (or empty if text is '').
+    line: 行距（240=单倍，360=1.5倍）。"""
     p = OxmlElement('w:p')
     pPr = OxmlElement('w:pPr')
     jc = OxmlElement('w:jc'); jc.set(qn('w:val'), align); pPr.append(jc)
     spacing = OxmlElement('w:spacing')
     spacing.set(qn('w:before'), str(int(space_before_pt * 20)))
     spacing.set(qn('w:after'), str(int(space_after_pt * 20)))
-    spacing.set(qn('w:line'), '360'); spacing.set(qn('w:lineRule'), 'auto')
+    spacing.set(qn('w:line'), str(line)); spacing.set(qn('w:lineRule'), 'auto')
     pPr.append(spacing)
     ind = OxmlElement('w:ind')
     ind.set(qn('w:firstLine'), '0'); ind.set(qn('w:firstLineChars'), '0')
@@ -154,15 +156,34 @@ def _make_para(text, *, size_pt, bold=False, align='center', font_cjk='黑体',
 
 
 def _make_field_row(label, value):
-    """Cover field line: '标签：____value____' centered, value underlined."""
+    """Cover field line: '标签：____value____'。
+    整块左对齐 + 固定左缩进（让字段块作为整体在页面居中），
+    标签右补全角空格到 4 字宽，使各行冒号竖直对齐。
+    """
+    # 标签规整到等宽：以最长标签"学科/专业"(5 字)为基准，其余右侧补全角空格
+    label_plain = label.replace('　', '')  # 去掉已有的对齐空格
+    pad = max(0, 4 - len(label_plain))      # 4 字标签补到等宽
+    if len(label_plain) >= 4:
+        label_fmt = label                   # "学科/专业""申请学位"等不再加空格
+    else:
+        # 在标签字符间均匀插入全角空格凑到 4 字宽（如 姓名→姓　　名）
+        if len(label_plain) == 2:
+            label_fmt = label_plain[0] + '　　' + label_plain[1]
+        else:
+            label_fmt = label_plain + '　' * pad
+
     p = OxmlElement('w:p')
     pPr = OxmlElement('w:pPr')
-    jc = OxmlElement('w:jc'); jc.set(qn('w:val'), 'center'); pPr.append(jc)
+    jc = OxmlElement('w:jc'); jc.set(qn('w:val'), 'left'); pPr.append(jc)
+    # 固定左缩进，使左对齐的字段块整体在页面居中
+    ind = OxmlElement('w:ind')
+    ind.set(qn('w:left'), '2600'); ind.set(qn('w:firstLine'), '0')
+    ind.set(qn('w:firstLineChars'), '0'); pPr.append(ind)
     spacing = OxmlElement('w:spacing')
     spacing.set(qn('w:after'), '160'); spacing.set(qn('w:line'), '300')
     spacing.set(qn('w:lineRule'), 'auto'); pPr.append(spacing)
     p.append(pPr)
-    for txt, ul in ((label + '：', False), (value, True)):
+    for txt, ul in ((label_fmt + '：', False), (value, True)):
         r = OxmlElement('w:r')
         rPr = OxmlElement('w:rPr')
         rfonts = OxmlElement('w:rFonts')
@@ -254,7 +275,8 @@ _DEFAULT_META = {
         ['申请学位', '工商管理硕士'],
     ],
     'date': '20XX 年 XX 月',
-    'header_left': '上海交通大学硕士学位论文',
+    'header_left': '上海交通大学MBA学位论文',
+    'header_title': '论文题目占位（请在 docs/thesis-meta.json 中修改）',
     'frontmatter_header_right': '摘　要',
     'toc_header_right': '目　录',
 }
@@ -277,31 +299,101 @@ COVER = {'title': META['title'], 'fields': META['fields'], 'date': META['date']}
 
 LOGO_PATH = os.path.join(os.path.dirname(__file__), 'figures', 'sjtu-logo.png')
 
+# 原创性声明与版权授权书正文（逐字取自安泰官方格式样本）
+DECLARATION_TEXT = (
+    '本人郑重声明：所呈交的学位论文，是本人在导师的指导下，独立进行研究工作'
+    '所取得的成果。除文中已经注明引用的内容外，本论文不包含任何其他个人或集体'
+    '已经发表或撰写过的作品成果。对本文的研究做出重要贡献的个人和集体，均已在'
+    '文中以明确方式标明。本人完全意识到本声明的法律结果由本人承担。'
+)
+AUTHORIZATION_TEXT = (
+    '本学位论文作者完全了解学校有关保留、使用学位论文的规定，同意学校保留并向'
+    '国家有关部门或机构送交论文的复印件和电子版，允许论文被查阅和借阅。'
+)
+
+
+def _build_declaration_elements():
+    """原创性声明页 + 版权使用授权书页（封面后、摘要前）。"""
+    els = []
+    # —— 原创性声明页 ——
+    els.append(_make_para('', size_pt=10.5, space_after_pt=24))
+    els.append(_make_para('上海交通大学', size_pt=16, bold=True, font_cjk='黑体',
+                          space_after_pt=6))
+    els.append(_make_para('学位论文原创性声明', size_pt=16, bold=True,
+                          font_cjk='黑体', space_after_pt=24))
+    p = _make_para(DECLARATION_TEXT, size_pt=12, font_cjk='宋体', align='both',
+                   space_after_pt=36)
+    # 正文首行缩进 2 字符
+    pPr = p.find(qn('w:pPr'))
+    ind = pPr.find(qn('w:ind'))
+    ind.set(qn('w:firstLine'), '480'); ind.set(qn('w:firstLineChars'), '200')
+    els.append(p)
+    els.append(_make_para('学位论文作者签名：', size_pt=14, font_cjk='宋体',
+                          align='right', space_after_pt=12))
+    els.append(_make_para('日期：    年   月   日', size_pt=14, font_cjk='宋体',
+                          align='right', space_after_pt=0))
+    els.append(_make_page_break())
+    # —— 版权使用授权书页 ——
+    els.append(_make_para('', size_pt=10.5, space_after_pt=24))
+    els.append(_make_para('上海交通大学', size_pt=16, bold=True, font_cjk='黑体',
+                          space_after_pt=6))
+    els.append(_make_para('学位论文使用授权书', size_pt=16, bold=True,
+                          font_cjk='黑体', space_after_pt=24))
+    p2 = _make_para(AUTHORIZATION_TEXT, size_pt=12, font_cjk='宋体', align='both',
+                    space_after_pt=18)
+    pPr2 = p2.find(qn('w:pPr'))
+    ind2 = pPr2.find(qn('w:ind'))
+    ind2.set(qn('w:firstLine'), '480'); ind2.set(qn('w:firstLineChars'), '200')
+    els.append(p2)
+    els.append(_make_para('本学位论文属于　□公开论文', size_pt=10.5,
+                          font_cjk='宋体', align='left', space_after_pt=4))
+    els.append(_make_para('　　　　　　　　□内部论文，□1年/□2年/□3年　解密后适用本授权书。',
+                          size_pt=10.5, font_cjk='宋体', align='left', space_after_pt=4))
+    els.append(_make_para('　　　　　　　　□秘密论文，　　年（不超过10年）解密后适用本授权书。',
+                          size_pt=10.5, font_cjk='宋体', align='left', space_after_pt=4))
+    els.append(_make_para('　　　　　　　　□机密论文，　　年（不超过20年）解密后适用本授权书。',
+                          size_pt=10.5, font_cjk='宋体', align='left', space_after_pt=4))
+    els.append(_make_para('（请在以上方框内打“√”）', size_pt=10.5, bold=True,
+                          font_cjk='宋体', align='left', space_after_pt=36))
+    els.append(_make_para('学位论文作者签名：　　　　　　　指导教师签名：',
+                          size_pt=14, font_cjk='宋体', align='left', space_after_pt=12))
+    els.append(_make_para('日期：　 年　 月　 日　　　　　 日期：　 年　 月　 日',
+                          size_pt=14, font_cjk='宋体', align='left', space_after_pt=0))
+    els.append(_make_page_break())
+    return els
+
 
 def _build_cover_elements(doc):
-    """封面布局 —— 紧凑排版确保单页容纳。各段间距经过压缩。"""
+    """封面布局 —— 严格照安泰官方模板：无校徽；中文题目二号(22pt)黑体加粗居中；
+    英文题目二号黑体加粗大写居中；字段三号(16pt)黑体居中。
+    版式：首行下空 3 行 → 中文题目 → 空 1 行 → 英文题目 → 空 6 行 → 字段。
+    """
+    # 单倍行距，确保单页容纳（参照案例封面比例）
     els = []
-    els.append(_make_para(META['school_line'], size_pt=24, bold=True,
-                          font_cjk='黑体', space_before_pt=12, space_after_pt=10))
-    # 校徽（2.6cm，间距收紧）
-    if os.path.exists(LOGO_PATH):
-        els.append(_make_logo_para(doc, LOGO_PATH, width_cm=2.6, space_after_pt=10))
-    # 题目（可能两行）
-    title_lines = META['title'].split('\n')
-    for i, line in enumerate(title_lines):
-        is_last = (i == len(title_lines) - 1)
-        els.append(_make_para(line, size_pt=20, bold=True, font_cjk='黑体',
-                              space_after_pt=(16 if is_last else 4)))
-    # 英文行
-    eng = META['english_lines']
-    for i, line in enumerate(eng):
-        is_last = (i == len(eng) - 1)
-        els.append(_make_para(line, size_pt=11, font_cjk='宋体',
-                              space_after_pt=(28 if is_last else 0)))
+    # 首行下空 2 行
+    for _ in range(2):
+        els.append(_make_para('', size_pt=12, line=240))
+    # 中文题目（二号 22pt 黑体加粗居中，可两行）
+    for line in META['title'].split('\n'):
+        els.append(_make_para(line, size_pt=22, bold=True, font_cjk='黑体',
+                              space_after_pt=2, line=300))
+    # 空 1 行
+    els.append(_make_para('', size_pt=10, line=240))
+    # 英文题目（小三 15pt 黑体加粗大写居中，案例中英文明显小于中文，可多行）
+    for line in META.get('english_title', '').split('\n'):
+        els.append(_make_para(line.upper(), size_pt=15, bold=True,
+                              font_cjk='黑体', space_after_pt=2, line=280))
+    # 空 3 行
+    for _ in range(3):
+        els.append(_make_para('', size_pt=12, line=240))
+    # 字段（三号 16pt 黑体，左对齐成块、整体缩进使其居中偏左，冒号竖直对齐）
     for label, value in META['fields']:
-        els.append(_make_field_row(label, value))
-    els.append(_make_para(META['date'], size_pt=15, font_cjk='黑体',
-                          space_before_pt=24))
+        p = _make_para(f'{label}：{value}', size_pt=16, bold=False,
+                       font_cjk='黑体', align='left', space_after_pt=6, line=300)
+        pPr = p.find(qn('w:pPr'))
+        ind = pPr.find(qn('w:ind'))
+        ind.set(qn('w:left'), '2600')   # 左缩进约 4.6cm，使字段块居中偏左
+        els.append(p)
     els.append(_make_page_break())
     return els
 
@@ -488,7 +580,9 @@ def add_frontmatter(doc) -> None:
     # 锚点 1：文档第一个段落（摘要标题）→ 封面插到它前面
     first_anchor = doc.paragraphs[0]._element
     cover_els = _build_cover_elements(doc)
-    # 移除封面末尾的纯分页符，改用封面节分节符承载
+    # 封面后紧跟原创性声明页 + 版权使用授权书页（同属封面节，无页码）
+    cover_els.extend(_build_declaration_elements())
+    # 移除末尾的纯分页符，改用封面节分节符承载
     if cover_els and cover_els[-1].find(qn('w:r')) is not None and \
             cover_els[-1].find('.//' + qn('w:br')) is not None:
         cover_els = cover_els[:-1]
@@ -527,33 +621,31 @@ def add_frontmatter(doc) -> None:
     for el in toc_els:
         ch1_anchor.addprevious(el)
 
-    # 摘要节（index 1）、目录节（index 2）页眉右侧文字（取自 meta）
-    _set_section_header(doc, doc.sections[1], META['frontmatter_header_right'])
-    _set_section_header(doc, doc.sections[2], META['toc_header_right'])
+    # 摘要节（index 1）、目录节（index 2）按模板不加页眉：清空其页眉内容
+    for idx in (1, 2):
+        sec = doc.sections[idx]
+        hdr = sec.header
+        hdr.is_linked_to_previous = False
+        for p in list(hdr.paragraphs):
+            p.clear()
 
-    # 正文按章分节，每节页眉右侧写死本章标题（替代不稳定的 STYLEREF 域）
+    # 正文按章分节（分节用于分段页码）；按纲领，每节页眉右侧统一写论文题目。
     section_markers = _split_body_into_sections(doc)
     # 分节后 sections 顺序固定为：[封面, 摘要, 目录, 章1, 章2, ..., 末章]
-    # 正文节从 index 3 开始，与 section_markers 一一对应。
+    # 正文节从 index 3 开始。页眉右侧统一为论文题目（纲领要求）。
     body_sections = doc.sections[3:]
-    titles = [title for title, _ in section_markers]
-    if len(body_sections) != len(titles):
-        raise RuntimeError(
-            f'正文节数({len(body_sections)})与章标题数({len(titles)})不符')
-    for section, title in zip(body_sections, titles):
-        _set_section_header(doc, section, title)
+    for section in body_sections:
+        _set_section_header(doc, section, META['header_title'])
 
-    # 封面首页：显式建立空的 first-page 页眉/页脚，确保不显示横线与页码
+    # 封面节（封面 + 声明 + 授权页）：首页与后续页的页眉页脚均清空，
+    # 确保整节无页眉横线、无页码（属前置部分，不编页码）。
     cover_section = doc.sections[0]
     cover_section.different_first_page_header_footer = True
-    fh = cover_section.first_page_header
-    fh.is_linked_to_previous = False
-    for p in list(fh.paragraphs):
-        p.clear()
-    ff = cover_section.first_page_footer
-    ff.is_linked_to_previous = False
-    for p in list(ff.paragraphs):
-        p.clear()
+    for hf in (cover_section.first_page_header, cover_section.first_page_footer,
+               cover_section.header, cover_section.footer):
+        hf.is_linked_to_previous = False
+        for p in list(hf.paragraphs):
+            p.clear()
 
     _enable_update_fields(doc)
 
@@ -575,11 +667,89 @@ def post_process(docx_path: str, with_cover: bool = False) -> int:
         _set_row_properties(table)
         _clear_cell_first_line_indent(table)
 
+    _enforce_fonts(doc)
+    _style_table_captions(doc)
+
     if with_cover:
         add_frontmatter(doc)
 
     doc.save(docx_path)
     return n_tables
+
+
+import re as _re
+
+_TABLE_CAP_RE = _re.compile(r'^表\s*\d+-\d+\s')
+
+# 样式 → 中文字体映射（纲领：标题黑体、正文宋体、图题楷体）。
+# 显式写死每个 run 的 eastAsia，根除 Word 在无显式字体时回退到"等线"的问题。
+_STYLE_FONT = {
+    'Heading 1': '黑体', 'Heading 2': '黑体', 'Heading 3': '黑体',
+    'Heading 4': '黑体', 'Heading 5': '黑体',
+    'Image Caption': '楷体',  # 图题楷体
+    'Normal': '宋体', 'Body Text': '宋体', 'First Paragraph': '宋体',
+    'Compact': '宋体', 'Bibliography': '宋体',
+}
+
+
+def _set_run_font(r, font):
+    rpr = r._element.get_or_add_rPr()
+    rf = rpr.find(qn('w:rFonts'))
+    if rf is None:
+        rf = OxmlElement('w:rFonts'); rpr.insert(0, rf)
+    rf.set(qn('w:eastAsia'), font)
+    rf.set(qn('w:ascii'), 'Times New Roman')
+    rf.set(qn('w:hAnsi'), 'Times New Roman')
+
+
+def _enforce_fonts(doc):
+    """给每个 run 显式写死中文字体（eastAsia），不依赖样式继承——
+    根除 Word 在无显式字体时回退到"等线"的问题。覆盖正文段落 + 表格单元格。
+    """
+    # 正文段落（按样式映射）
+    for p in doc.paragraphs:
+        font = _STYLE_FONT.get(p.style.name)
+        if font is None:
+            continue
+        for r in p.runs:
+            _set_run_font(r, font)
+    # 表格单元格内容（统一宋体——表格属正文）
+    for t in doc.tables:
+        for row in t.rows:
+            for cell in row.cells:
+                for p in cell.paragraphs:
+                    for r in p.runs:
+                        _set_run_font(r, '宋体')
+
+
+def _style_table_captions(doc):
+    """把表名段落（如“表 5-1 ……”，加粗、整段为表名）改为五号楷体居中。
+    纲领：表题五号楷体，写在表格正上方居中。仅处理加粗的表名段，不动正文中
+    提及表号的普通句子。
+    """
+    for p in doc.paragraphs:
+        t = p.text.strip()
+        if not _TABLE_CAP_RE.match(t):
+            continue
+        runs = p.runs
+        if not runs or not any(r.font.bold for r in runs):
+            continue  # 正文提及句（非加粗）跳过
+        # 居中
+        pPr = p._element.get_or_add_pPr()
+        for jc in pPr.findall(qn('w:jc')):
+            pPr.remove(jc)
+        jc = OxmlElement('w:jc'); jc.set(qn('w:val'), 'center'); pPr.append(jc)
+        # 每个 run 改楷体五号、去加粗
+        for r in runs:
+            r.font.bold = False
+            r.font.size = Pt(10.5)  # 五号
+            rpr = r._element.get_or_add_rPr()
+            rf = rpr.find(qn('w:rFonts'))
+            if rf is None:
+                rf = OxmlElement('w:rFonts'); rpr.insert(0, rf)
+            rf.set(qn('w:eastAsia'), '楷体')
+            rf.set(qn('w:ascii'), 'Times New Roman')
+            rf.set(qn('w:hAnsi'), 'Times New Roman')
 
 
 # Note: 4-level headings (####) and figure captions show a tiny square mark

@@ -171,47 +171,54 @@ lastNode -> caption [style=invis];
 
 ## Matplotlib 规则
 
-### 样式设置（每个脚本必须包含）
+### 统一样式：用 `docs/figures/_style.py` 公共模块
+
+**所有 matplotlib 图脚本必须 import 公共样式模块**，不要各自重复定义字体/配色/
+字号。脚本从仓库根运行，需先把脚本目录加进 sys.path：
 
 ```python
-# 自动检测系统中的中文字体（可能是 SC、JP 等）
-CJK_FONTS = [f.name for f in fm.fontManager.ttflist if 'Noto Sans CJK' in f.name]
-FONT_NAME = CJK_FONTS[0] if CJK_FONTS else 'sans-serif'
-
-plt.rcParams.update({
-    'font.sans-serif': [FONT_NAME, 'Noto Sans CJK SC', 'Noto Sans CJK JP', 'SimHei'],
-    'font.family': 'sans-serif',
-    'font.size': 11,
-    'axes.unicode_minus': False,
-    'figure.facecolor': 'white',
-    'axes.facecolor': 'white',
-    'axes.edgecolor': 'black',
-    'axes.linewidth': 0.8,
-})
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _style import apply_style, add_caption, C_PRIMARY, C_SECOND, C_LINE, C_ACCENT, C_TARGET
+import matplotlib.pyplot as plt
+apply_style()   # 套用统一 rcParams（字体探测 + 11pt 基准 + 300 DPI）
 ```
 
-### 配色方案
+### 配色方案（统一调色板，定义在 _style.py）
 
-仅使用灰度色，符合学术规范：
-- 柱状图填充：`#404040`（深灰）、`#808080`（中灰）
-- 饼图扇区：`plt.cm.gray(0.3 + 0.5 * i / (n-1))` 渐变
-- 网格线：`color='gray', alpha=0.3, linestyle='--'`
-- 所有文字：黑色
+- `C_PRIMARY = '#2c3e50'` 深蓝灰 —— **所有数据柱主体统一用此主色**
+- `C_SECOND = '#7f8c8d'` 中灰 —— 堆叠第二层 / As-Is 对照系列
+- `C_TERTIARY = '#bdc3c7'` 浅灰 —— 堆叠第三层
+- `C_LINE = '#1f1f1f'` 近黑 —— **双轴图的副轴折线统一用近黑**（不用彩色）
+- `C_ACCENT = '#c0392b'` 砖红 —— 仅关键强调 / 阈值线
+- `C_TARGET = '#27ae60'` 绿 —— 仅目标 / 达标参考线
+- 网格线：`GRID`（`color='gray', alpha=0.3, linestyle='--'`）
+- 多类别堆叠图可用主色起的同色系明度梯度区分类别
+
+### 字号阶梯（_style.py 导出常量）
+
+`FS_AXIS_LABEL=11 / FS_TICK=10 / FS_DATA_LABEL=10 / FS_LEGEND=10 / FS_ANNOT=9.5`
+—— 数据标注不要小于 9.5pt，避免 Word 中看不清。
 
 ### 图表格式
 
 - 隐藏上边框和右边框：`ax.spines['top'].set_visible(False)`
 - 数值轴添加浅色网格
-- 柱状图顶部显示数值标签（格式：`{:.1f}%` 或 `{:.0f}%`）
-- 分辨率：300 DPI
+- 柱状图顶部数值标签；图例统一 `frameon=False`
+- 柱顶若同时有"数值"与"增长率"两行标注，垂直间距至少拉开 ~2.7% 量程，避免重叠
 
-### 图注（图表下方）
+### 图注（用 add_caption 辅助函数）
 
 ```python
-fig.text(0.5, 0.02, "图 X-Y    中文标题", ha='center', fontsize=11, fontweight='bold')
-fig.text(0.5, -0.02, "Figure X-Y  English Title", ha='center', fontsize=10)
+add_caption(fig, "图 X-Y    中文标题", "Figure X-Y  English Title")
 plt.tight_layout(rect=[0, 0.06, 1, 1])
 ```
+
+### DPI（不在脚本里写死，生成后统一校验）
+
+savefig 不要写 `dpi=200/220` 等显式值（继承 _style 的 300）。生成后按
+本文 `图片 DPI 规则` 用校验脚本把宽度调到 Word 中约 15cm：
+`needed_dpi = max(150, int(px / 5.9))`。
 
 ### 输出
 
@@ -224,7 +231,7 @@ plt.savefig(OUTPUT_PATH, dpi=300, bbox_inches='tight', facecolor='white')
 1. **禁止在 Graphviz 中用 `<BR/>` 实现多行居中** — 必须用嵌套表格方案。
 2. **禁止使用 `shape=record`** — 不支持 HTML 标签和中文。
 3. **禁止省略 `fontname="Noto Sans CJK SC"`** — 中文会显示为方框。
-4. **禁止使用黑白灰以外的颜色** — 学术图表必须单色。
+4. **禁止脱离统一调色板自创配色** — 必须用 `_style.py` 的 C_PRIMARY 等常量；主色统一 #2c3e50，副轴线近黑，红/绿仅作强调与目标线。
 5. **禁止省略图注** — 每张论文图表必须有编号图注。
 6. **禁止用 Graphviz 画数据图表** — 柱状图、饼图等用 matplotlib。
 7. **禁止用 matplotlib 画结构图** — 方框箭头类用 Graphviz。

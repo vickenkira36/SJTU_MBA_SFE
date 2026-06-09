@@ -64,3 +64,7 @@ docs/superpowers/
 *-降低AI后.docx
 # 过期分章 docx 产物（已由单源 thesis.md 取代）
 docs/chapter0*.docx
+
+# 论文导出产物（PDF/初稿 docx，非源）
+docs/论文初稿.pdf
+论文初稿*.docx

@@ -1,32 +1,22 @@
 #!/usr/bin/env python3
 """Generate fig4-3: SA Move/Swap operation diagram."""
 
-import matplotlib
-matplotlib.use('Agg')
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _style import apply_style, add_caption, C_PRIMARY, C_ACCENT
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
 
-# CJK font
-import matplotlib.font_manager as fm
-preferred = ['Noto Sans CJK SC', 'Noto Sans CJK JP', 'Noto Sans CJK TC']
-available = {f.name for f in fm.fontManager.ttflist}
-CJK_FONT = next((f for f in preferred if f in available), None)
-plt.rcParams.update({
-    'font.family': 'sans-serif',
-    'font.sans-serif': [CJK_FONT, 'DejaVu Sans'],
-    'axes.unicode_minus': False,
-    'figure.dpi': 300,
-    'savefig.dpi': 300,
-    'savefig.bbox': 'tight',
-})
+apply_style()
 
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
-# Colors
-C_A = '#3498db'
-C_B = '#e74c3c'
-C_ARROW = '#2c3e50'
+# 辖区 A/B 双色（需可区分）：A=主色深蓝灰，B=强调砖红；箭头用主色
+C_A = C_PRIMARY
+C_B = C_ACCENT
+C_ARROW = C_PRIMARY
 
 # ---- Left panel: Move operation ----
 ax1.set_title('(a) Move操作', fontsize=13, fontweight='bold', pad=15)
@@ -111,7 +101,9 @@ ax2.text(5.0, 4.3, 'h3 ⇄ h5', ha='center', fontsize=9, color=C_ARROW)
 ax2.text(5.0, 1.5, '概率: 40%', ha='center', fontsize=10,
          bbox=dict(boxstyle='round,pad=0.3', facecolor='#fef9e7', edgecolor='#f39c12'))
 
-plt.tight_layout()
+add_caption(fig, '图 4-3    模拟退火 Move / Swap 操作示意图',
+            'Figure 4-3  Simulated Annealing Move / Swap Operations')
+plt.tight_layout(rect=[0, 0.05, 1, 1])
 fig.savefig('docs/figures/fig4-3.png')
 plt.close(fig)
 print("Generated fig4-3.png")
