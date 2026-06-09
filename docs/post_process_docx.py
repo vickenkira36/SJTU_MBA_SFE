@@ -647,6 +647,11 @@ def add_frontmatter(doc) -> None:
         for p in list(hf.paragraphs):
             p.clear()
 
+    # 除封面节(0)外，所有节注入居中 PAGE 页码域（摘要/目录罗马、正文阿拉伯，
+    # 页码格式由各节 pgNumType 决定）。封面节保持无页码。
+    for sec in doc.sections[1:]:
+        _set_section_footer_pagenum(doc, sec)
+
     _enable_update_fields(doc)
 
 
@@ -690,6 +695,52 @@ _STYLE_FONT = {
     'Normal': '宋体', 'Body Text': '宋体', 'First Paragraph': '宋体',
     'Compact': '宋体', 'Bibliography': '宋体',
 }
+
+
+def _footer_pagenum_xml():
+    """构造含居中 PAGE 域的页脚 XML（页码居中，五号 Times New Roman）。"""
+    return (
+        '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        '<w:p><w:pPr>'
+        '<w:pStyle w:val="Footer"/>'
+        '<w:jc w:val="center"/>'
+        '<w:ind w:firstLine="0" w:firstLineChars="0" w:left="0"/>'
+        '</w:pPr>'
+        '<w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/>'
+        '<w:sz w:val="21"/><w:szCs w:val="21"/></w:rPr>'
+        '<w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r>'
+        '<w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/>'
+        '<w:sz w:val="21"/></w:rPr>'
+        '<w:instrText xml:space="preserve"> PAGE \\* MERGEFORMAT </w:instrText></w:r>'
+        '<w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/>'
+        '<w:sz w:val="21"/></w:rPr><w:fldChar w:fldCharType="separate"/></w:r>'
+        '<w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/>'
+        '<w:sz w:val="21"/></w:rPr><w:t>1</w:t></w:r>'
+        '<w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/>'
+        '<w:sz w:val="21"/></w:rPr><w:fldChar w:fldCharType="end"/></w:r>'
+        '</w:p></w:ftr>'
+    )
+
+
+def _set_section_footer_pagenum(doc, section):
+    """为某节创建独立 footer part 并写入居中 PAGE 页码域。"""
+    from docx.oxml import parse_xml
+    sectpr = section._sectPr
+    for ref in sectpr.findall(qn('w:footerReference')):
+        if ref.get(qn('w:type')) in ('default', None):
+            sectpr.remove(ref)
+    footer_part, rId = doc.part.add_footer_part()
+    ftr = footer_part._element
+    for child in list(ftr):
+        ftr.remove(child)
+    target = parse_xml(_footer_pagenum_xml())
+    for child in list(target):
+        ftr.append(child)
+    ref = OxmlElement('w:footerReference')
+    ref.set(qn('w:type'), 'default')
+    ref.set(qn('r:id'), rId)
+    # footerReference 须在 headerReference 之后、sectPr 较前位置
+    sectpr.insert(0, ref)
 
 
 def _set_run_font(r, font):
