@@ -320,6 +320,19 @@ def fig_5_5():
     for prov in by_prov:
         by_prov[prov].sort(key=lambda x: x['iterations'])
 
+    # 500K 为基准运行档，与 5.2/5.3 主结果统一口径（表 5-2/5-3 一致）：
+    # 用主结果的 To-Be CV 覆盖 500K 数据点，其余档位保留敏感性扫描原值。
+    main_500k = {
+        '上海': (13.0, 79.6),
+        '湖南': (19.3, 56.5),
+        '新疆': (35.3, 26.4),
+    }
+    for prov, rs in by_prov.items():
+        if prov in main_500k:
+            for r in rs:
+                if r['iterations'] == 500000:
+                    r['to_be_cv_pct'], r['cv_improvement_pct'] = main_500k[prov]
+
     color_map = {'上海': BLUE, '湖南': DARK, '新疆': RED}
     iter_ticks = [100, 300, 500, 1000]
     iter_labels = ['100K', '300K', '500K\n（默认）', '1M']
@@ -332,7 +345,7 @@ def fig_5_5():
         iters = [r['iterations'] / 1000 for r in rs]
         cvs = [r['to_be_cv_pct'] for r in rs]
         ax.plot(iters, cvs, marker='o', linewidth=1.6, markersize=7,
-                color=color_map[prov], label=f'{prov} BC')
+                color=color_map[prov], label=prov)
         as_is_cv = rs[0]['as_is_cv_pct']
         ax.axhline(as_is_cv, color=color_map[prov], linestyle=':',
                    linewidth=0.7, alpha=0.45)
@@ -357,7 +370,7 @@ def fig_5_5():
         iters = [r['iterations'] / 1000 for r in rs]
         imps = [r['cv_improvement_pct'] for r in rs]
         ax.plot(iters, imps, marker='o', linewidth=1.6, markersize=7,
-                color=color_map[prov], label=f'{prov} BC')
+                color=color_map[prov], label=prov)
     ax.axhline(0, color='black', linewidth=0.5)
     ax.set_xscale('log')
     ax.set_xticks(iter_ticks)
