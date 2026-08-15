@@ -43,7 +43,7 @@ def fig1_1():
 
     # 柱顶总额标签（下层）与增长率（上层）分层放置，避免重叠
     for i, t in enumerate(total):
-        ax.text(i, t + 20, f'{t/100:.1f}万亿', ha='center', va='bottom',
+        ax.text(i, t + 20, f'{t/1000:.2f}万亿', ha='center', va='bottom',
                 fontsize=FS_DATA_LABEL)
     growth_labels = ['', '+11%', '+1%', '+9%', '-1%', '0%']
     for i, g in enumerate(growth_labels):

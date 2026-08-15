@@ -98,8 +98,8 @@ def fig_5_1():
 
     # 数值标注
     for i, (a, b) in enumerate(zip(asis_vals, tobe_vals)):
-        ax.text(-a - 50, y[i] - h/2, f'{int(a)}', va='center', ha='right', fontsize=8.5, color='black')
-        ax.text(b + 50, y[i] + h/2, f'{int(b)}', va='center', ha='left', fontsize=8.5, color='black')
+        ax.text(-a - 50, y[i] - h/2, f'{round(a)}', va='center', ha='right', fontsize=8.5, color='black')
+        ax.text(b + 50, y[i] + h/2, f'{round(b)}', va='center', ha='left', fontsize=8.5, color='black')
 
     # 轴
     ax.set_yticks(y)
