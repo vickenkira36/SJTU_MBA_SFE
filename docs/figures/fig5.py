@@ -1,9 +1,9 @@
 """
 第五章图表生成脚本（图 5-1 至 图 5-5）
-数据来源：
-  - 图 5-1/5-2/5-3: data/case/output/bc-湖南/{result, metrics}.json
-  - 图 5-4:        data/case/output/bc-{上海,湖南,新疆维吾尔自治区}/result.json
-  - 图 5-5:        data/case/output/sensitivity/summary.json
+数据来源（均为 5.1.2 节所述"每省 10 次独立重复、按代价函数取优"的主运行）：
+  - 图 5-1/5-2/5-3: data/case/output/replicates/main/湖南-r2/{result, as-is, metrics}.json
+  - 图 5-4:        data/case/output/replicates/main/{上海-r2,湖南-r2,新疆-r10}/result.json
+  - 图 5-5:        data/case/output/replicates/sweep/*/metrics.json（每档 10 次，报均值±标准差）
 所有图统一字体 Noto Sans CJK SC + 物理宽度约 15 cm + DPI 自适应。
 """
 import json
@@ -22,6 +22,13 @@ apply_style()
 
 OUT = 'docs/figures'
 DATA = 'data/case/output'
+
+# 第五章主结果所用的运行：每省 10 次独立重复中按代价函数取优的那一次（见 5.1.2 节）
+MAIN_RUN = {
+    '上海': 'replicates/main/上海-r2',
+    '湖南': 'replicates/main/湖南-r2',
+    '新疆': 'replicates/main/新疆-r10',
+}
 
 # 配色（对齐统一调色板）
 DARK = C_PRIMARY     # 主柱 深蓝灰
@@ -46,7 +53,7 @@ def load_data(path_key):
 
 def fig_5_1():
     """图 5-1 湖北 BC Index 均衡度蝴蝶图：As-Is vs To-Be"""
-    result, as_is, metrics = load_data('bc-湖南')
+    result, as_is, metrics = load_data(MAIN_RUN['湖南'])
 
     # As-Is：从 historical 重组每辖区 Index 总和
     # 注意：tr.hospitals[i].index 是医院的"全 idx"，同 inscode 跨多 territory 不应累加；
@@ -128,7 +135,7 @@ def fig_5_1():
 
 def fig_5_2():
     """图 5-2 湖北 BC 地理紧凑性散点图"""
-    result, as_is, metrics = load_data('bc-湖南')
+    result, as_is, metrics = load_data(MAIN_RUN['湖南'])
 
     # 计算每辖区的最大半径（As-Is 与 To-Be）
     # As-Is：从 historical 重组
@@ -202,7 +209,7 @@ def fig_5_2():
 
 def fig_5_3():
     """图 5-3 湖北 BC 客户保留率与震荡成本"""
-    _, _, metrics = load_data('bc-湖南')
+    _, _, metrics = load_data(MAIN_RUN['湖南'])
     ret = metrics['retention']
 
     # 三组对比：医院数保留率 / Index 加权保留率 / 震荡成本估算
@@ -254,7 +261,7 @@ def fig_5_3():
 def fig_5_4():
     """图 5-4 三省份计算时间与规模"""
     rows = []
-    for tag, label in [('bc-上海', '上海 BC'), ('bc-湖南', '湖南 BC'), ('bc-新疆维吾尔自治区', '新疆 BC')]:
+    for tag, label in [(MAIN_RUN['上海'], '上海 BC'), (MAIN_RUN['湖南'], '湖南 BC'), (MAIN_RUN['新疆'], '新疆 BC')]:
         with open(f'{DATA}/{tag}/result.json') as f:
             r = json.load(f)
         rows.append({
@@ -309,54 +316,66 @@ def fig_5_4():
 
 
 def fig_5_5():
-    """图 5-5 SA 迭代次数敏感性扫描（5.4.2 节）"""
-    with open(f'{DATA}/sensitivity/summary.json') as f:
-        rows = json.load(f)
+    """图 5-5 SA 迭代次数敏感性扫描（5.4.2 节）
 
-    # 按省份分组并排序
+    每个档位 10 次独立重复，绘制均值折线 + 标准差误差棒。
+    左图为 To-Be CV，右图为 CV 改善幅度；灰带表示 ±1 个标准差。
+    """
+    import statistics as st
+
+    AS_IS = {'上海': 63.8, '湖南': 44.3, '新疆': 47.9}
+    ITERS = [100000, 300000, 500000, 1000000]
+
     by_prov = {}
-    for r in rows:
-        by_prov.setdefault(r['province'], []).append(r)
-    for prov in by_prov:
-        by_prov[prov].sort(key=lambda x: x['iterations'])
+    for prov in ['上海', '湖南', '新疆']:
+        series = []
+        for it in ITERS:
+            cvs = []
+            for d in sorted(Path(f'{DATA}/replicates/sweep').glob(f'{prov}-iter{it}-r*')):
+                mf = d / 'metrics.json'
+                if mf.exists():
+                    cvs.append(json.load(open(mf))['index_balance']['to_be']['cv_pct'])
+            if not cvs:
+                continue
+            mean = st.mean(cvs)
+            sd = st.stdev(cvs) if len(cvs) > 1 else 0.0
+            a = AS_IS[prov]
+            series.append({
+                'iterations': it, 'n': len(cvs),
+                'cv_mean': mean, 'cv_sd': sd,
+                'imp_mean': (a - mean) / a * 100,
+                'imp_sd': sd / a * 100,
+            })
+        by_prov[prov] = series
 
-    # 500K 为基准运行档，与 5.2/5.3 主结果统一口径（表 5-2/5-3 一致）：
-    # 用主结果的 To-Be CV 覆盖 500K 数据点，其余档位保留敏感性扫描原值。
-    main_500k = {
-        '上海': (13.0, 79.6),
-        '湖南': (19.3, 56.5),
-        '新疆': (35.3, 26.4),
-    }
-    for prov, rs in by_prov.items():
-        if prov in main_500k:
-            for r in rs:
-                if r['iterations'] == 500000:
-                    r['to_be_cv_pct'], r['cv_improvement_pct'] = main_500k[prov]
-
-    color_map = {'上海': BLUE, '湖南': DARK, '新疆': RED}
+    # 三省需可区分：原 BLUE 与 DARK 同为 C_PRIMARY，图上无法分辨
+    color_map = {'上海': C_PRIMARY, '湖南': C_SECOND, '新疆': C_ACCENT}
     iter_ticks = [100, 300, 500, 1000]
     iter_labels = ['100K', '300K', '500K\n（默认）', '1M']
 
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
 
-    # 子图 1：To-Be CV vs 迭代次数（含 As-Is 参考线）
+    # 子图 1：To-Be CV 均值 ± 标准差（含 As-Is 参考线）
     ax = axes[0]
     for prov, rs in by_prov.items():
-        iters = [r['iterations'] / 1000 for r in rs]
-        cvs = [r['to_be_cv_pct'] for r in rs]
-        ax.plot(iters, cvs, marker='o', linewidth=1.6, markersize=7,
-                color=color_map[prov], label=prov)
-        as_is_cv = rs[0]['as_is_cv_pct']
-        ax.axhline(as_is_cv, color=color_map[prov], linestyle=':',
-                   linewidth=0.7, alpha=0.45)
-        ax.text(1080, as_is_cv, f'As-Is {as_is_cv:.1f}%',
-                fontsize=8, color=color_map[prov], va='center')
+        x = [r['iterations'] / 1000 for r in rs]
+        y = [r['cv_mean'] for r in rs]
+        e = [r['cv_sd'] for r in rs]
+        c = color_map[prov]
+        ax.errorbar(x, y, yerr=e, marker='o', linewidth=1.6, markersize=6,
+                    color=c, label=prov, capsize=3, elinewidth=1.0)
+        ax.fill_between(x, [a - b for a, b in zip(y, e)],
+                        [a + b for a, b in zip(y, e)], color=c, alpha=0.10)
+        a = AS_IS[prov]
+        ax.axhline(a, color=c, linestyle=':', linewidth=0.7, alpha=0.45)
+        ax.text(86, a, f'As-Is {a:.1f}%', fontsize=8, color=c,
+                va='bottom', ha='left')
     ax.set_xscale('log')
     ax.set_xticks(iter_ticks)
     ax.set_xticklabels(iter_labels, fontsize=9)
     ax.set_xlabel('SA 迭代次数（对数刻度）', fontsize=10.5)
     ax.set_ylabel('To-Be CV (%)', fontsize=10.5)
-    ax.set_title('SA 迭代次数 vs To-Be CV', fontsize=11, pad=6)
+    ax.set_title('SA 迭代次数 vs To-Be CV（均值 ± 标准差，n=10）', fontsize=11, pad=6)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.grid(True, linestyle=':', alpha=0.3)
@@ -364,20 +383,24 @@ def fig_5_5():
     ax.legend(loc='upper right', frameon=False, fontsize=9)
     ax.set_xlim(80, 1400)
 
-    # 子图 2：CV 改善幅度 vs 迭代次数
+    # 子图 2：CV 改善幅度均值 ± 标准差
     ax = axes[1]
     for prov, rs in by_prov.items():
-        iters = [r['iterations'] / 1000 for r in rs]
-        imps = [r['cv_improvement_pct'] for r in rs]
-        ax.plot(iters, imps, marker='o', linewidth=1.6, markersize=7,
-                color=color_map[prov], label=prov)
+        x = [r['iterations'] / 1000 for r in rs]
+        y = [r['imp_mean'] for r in rs]
+        e = [r['imp_sd'] for r in rs]
+        c = color_map[prov]
+        ax.errorbar(x, y, yerr=e, marker='o', linewidth=1.6, markersize=6,
+                    color=c, label=prov, capsize=3, elinewidth=1.0)
+        ax.fill_between(x, [a - b for a, b in zip(y, e)],
+                        [a + b for a, b in zip(y, e)], color=c, alpha=0.10)
     ax.axhline(0, color='black', linewidth=0.5)
     ax.set_xscale('log')
     ax.set_xticks(iter_ticks)
     ax.set_xticklabels(iter_labels, fontsize=9)
     ax.set_xlabel('SA 迭代次数（对数刻度）', fontsize=10.5)
     ax.set_ylabel('CV 改善幅度 (%)', fontsize=10.5)
-    ax.set_title('SA 迭代次数 vs CV 改善幅度', fontsize=11, pad=6)
+    ax.set_title('SA 迭代次数 vs CV 改善幅度（均值 ± 标准差，n=10）', fontsize=11, pad=6)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.grid(True, linestyle=':', alpha=0.3)
@@ -386,11 +409,10 @@ def fig_5_5():
     ax.set_xlim(80, 1400)
 
     fig.text(0.5, 0.01,
-             '图 5-5    SA 迭代次数对 To-Be CV 与改善幅度的敏感性扫描',
+             '图 5-5    SA 迭代次数对 To-Be CV 的敏感性扫描（每档 10 次重复，误差棒为标准差）',
              ha='center', fontsize=10.5, fontfamily='Kaiti SC')
     plt.tight_layout(rect=[0, 0.04, 1, 1])
-    plt.savefig(f'{OUT}/fig5-5.png',
-                bbox_inches='tight', facecolor='white')
+    plt.savefig(f'{OUT}/fig5-5.png', bbox_inches='tight', facecolor='white')
     plt.close()
     print('Saved fig5-5.png')
 
