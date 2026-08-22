@@ -22,7 +22,8 @@ digraph G {
         bgcolor="#eaf2f8";
         margin="8";
 
-        clustering [label="六层地理聚类\nL1大医院独占 → L2区县 → L3城市 → L4剩余收集\n→ L5亲和预合并 → L6落单归属 + Maximin种子选择"];
+        exclusive [label="前置：一对一城市锁定\n（历史上被单一辖区独占的城市优先独立成簇）", fillcolor="#fdebd0"];
+        clustering [label="六层地理聚类\nL1大医院独占 → L2区县 → L3城市\n→ L4剩余收集 → L5亲和预合并 → L6落单归属"];
         sa [label="模拟退火优化 (500,000次迭代)\nMove 60% / Swap 40%", fillcolor="#d5e8d4"];
         note1 [label="代价函数不含\n历史惩罚项", shape=note, fillcolor="#fdebd0", fontsize=8];
     }
@@ -38,7 +39,7 @@ digraph G {
         bgcolor="#fdedec";
         margin="8";
 
-        weight [label="三层权重矩阵构建\n医院级(idx²/500) + 区县级(+100) + 城市级(+50)"];
+        weight [label="构建簇 ↔ 历史辖区权重矩阵\n（三层权重设计详见 4.5.3.2 节）"];
         hungarian [label="Hungarian算法 (Kuhn-Munkres)\n匿名簇 → 历史辖区ID 最优匹配", fillcolor="#f9e79f"];
         note2 [label="历史分配数据\n(上期方案)", shape=note, fillcolor="#fdebd0", fontsize=8];
     }
@@ -47,7 +48,7 @@ digraph G {
     output [label="最终辖区分配方案\n(医院→辖区映射 + 评估指标)", fillcolor="#d5f5e3"];
 
     // Edges
-    input -> preprocess -> province -> clustering -> sa;
+    input -> preprocess -> province -> exclusive -> clustering -> sa;
     sa -> weight [label="匿名簇(均衡最优)"];
     weight -> hungarian -> output;
 
