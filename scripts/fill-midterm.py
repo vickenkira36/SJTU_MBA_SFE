@@ -82,35 +82,59 @@ def fill_dropdown(doc, label, display):
             ts[0].text = display
             for extra in ts[1:]:
                 extra.text = ''
+        # 去掉占位符字符样式（rStyle a8），否则填入的文字仍显示为灰色；
+        # 同时对齐同格其它文字的字号（28 半磅 = 14pt）
+        for rpr in content.iter(W + 'rPr'):
+            st = rpr.find(W + 'rStyle')
+            if st is not None:
+                rpr.remove(st)
+            if rpr.find(W + 'sz') is None:
+                for tag, val in (('sz', '28'), ('szCs', '28')):
+                    el = rpr.makeelement(W + tag, {W + 'val': val})
+                    rpr.append(el)
         return True
     return False
 
 
 def check_box(doc, label):
-    """把 label 对应的 ☐ 改成 ☑。"""
-    for p in doc.element.body.iter(W + 'p'):
-        ts = list(p.iter(W + 't'))
-        joined = ''.join(t.text or '' for t in ts)
-        if '☐' not in joined or label not in joined:
+    """勾选 label 对应的复选框。
+
+    模板里的复选框是 w14:checkbox 内容控件，不是纯文本，需同时处理三处：
+      - w14:checked 置 1（控件状态，决定 Word 里的勾选态）
+      - sdtContent 里的字形由 uncheckedState(2610=☐) 换成 checkedState(221A=√)
+      - 该 run 的字体换成 checkedState 指定的字体（宋体），否则字形显示不出来
+    """
+    W14 = '{http://schemas.microsoft.com/office/word/2010/wordml}'
+    body = doc.element.body
+    sdts = [s for s in body.iter(W + 'sdt') if s.find('.//' + W14 + 'checkbox') is not None]
+
+    for sdt in sdts:
+        # 复选框紧跟其后的文本即为标签，用它定位
+        tail = []
+        node = sdt
+        for _ in range(6):
+            node = node.getnext()
+            if node is None:
+                break
+            tail.append(''.join(t.text or '' for t in node.iter(W + 't')))
+        if label not in ''.join(tail):
             continue
-        # 该段可能含多个 ☐，只勾选紧邻 label 之前的那个
-        pos = joined.find(label)
-        before = joined[:pos]
-        n_box = before.count('☐')          # 目标是第 n_box+1 个 ☐
-        seen = 0
-        for t in ts:
-            if not t.text or '☐' not in t.text:
-                continue
-            out, local = [], t.text
-            for ch in local:
-                if ch == '☐':
-                    seen += 1
-                    out.append('☑' if seen == n_box + 1 else ch)
-                else:
-                    out.append(ch)
-            t.text = ''.join(out)
-            if seen > n_box:
-                return True
+
+        cb = sdt.find('.//' + W14 + 'checkbox')
+        checked = cb.find(W14 + 'checked')
+        if checked is not None:
+            checked.set(W14 + 'val', '1')
+        state = cb.find(W14 + 'checkedState')
+        glyph = chr(int(state.get(W14 + 'val'), 16)) if state is not None else '√'
+        font = state.get(W14 + 'font') if state is not None else '宋体'
+
+        content = sdt.find(W + 'sdtContent')
+        for t in content.iter(W + 't'):
+            t.text = glyph
+        for rf in content.iter(W + 'rFonts'):
+            for attr in ('ascii', 'eastAsia', 'hAnsi'):
+                rf.set(W + attr, font)
+        return True
     return False
 
 
